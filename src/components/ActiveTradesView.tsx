@@ -14,7 +14,9 @@ import {
   Users,
   ChevronRight,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 import { TradePosition, ConsensusStage, TradingBot } from '../types';
 import { STAGE_CONFIGS } from '../services/tradingEngine';
@@ -185,6 +187,30 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                       <div className="text-lg font-black text-slate-900 flex items-center gap-2 mt-1 font-mono">
                         <span>{trade.symbol}</span>
                         <span className="text-xs font-normal text-slate-500 font-sans">({trade.name})</span>
+                      </div>
+
+                      {/* Verified Contract / Network info */}
+                      <div className="flex items-center gap-2 mt-1 flex-wrap text-[11px] font-mono text-slate-500">
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          Verified
+                        </span>
+                        {trade.network && (
+                          <span className="text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded text-[10px]" title={trade.contractAddress}>
+                            {trade.network}
+                          </span>
+                        )}
+                        {trade.cmcUrl && (
+                          <a 
+                            href={trade.cmcUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline inline-flex items-center gap-0.5 text-[10px]"
+                            title="Verify coin contract & real-time price on CoinMarketCap"
+                          >
+                            CMC <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
                       </div>
                     </div>
 

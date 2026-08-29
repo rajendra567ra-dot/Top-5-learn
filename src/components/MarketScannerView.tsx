@@ -11,7 +11,9 @@ import {
   Sparkles, 
   Bot, 
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 import { CryptoCoin, TradingBot, ConsensusStage } from '../types';
 import { STAGE_CONFIGS } from '../services/tradingEngine';
@@ -327,8 +329,26 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                               <span className="px-1.5 py-0.2 rounded text-[9px] bg-slate-100 text-slate-600 font-medium">
                                 {coin.category}
                               </span>
+                              {coin.cmcUrl && (
+                                <a 
+                                  href={coin.cmcUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-0.5 text-[9px] font-sans"
+                                  title="Verify on CoinMarketCap"
+                                >
+                                  CMC <ExternalLink className="w-2.5 h-2.5" />
+                                </a>
+                              )}
                             </div>
-                            <div className="text-[10px] text-slate-500 truncate max-w-[120px] font-sans">{coin.name}</div>
+                            <div className="text-[10px] text-slate-500 truncate max-w-[140px] font-sans flex items-center gap-1">
+                              <span>{coin.name}</span>
+                              {coin.network && (
+                                <span className="text-[9px] text-slate-400 font-mono truncate max-w-[100px]" title={coin.contractAddress || coin.network}>
+                                  • {coin.network}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>

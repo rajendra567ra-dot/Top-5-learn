@@ -71,17 +71,17 @@ const INITIAL_MASTER_PORTFOLIO: MasterPortfolio = {
 export const App: React.FC = () => {
   // 1. Core State - Starting from zero baseline
   const [bots, setBots] = useState<TradingBot[]>(() => {
-    const saved = localStorage.getItem('ai_fleet_bots_v3');
+    const saved = localStorage.getItem('ai_fleet_bots_v4');
     return saved ? JSON.parse(saved) : INITIAL_BOTS;
   });
 
   const [masterPortfolio, setMasterPortfolio] = useState<MasterPortfolio>(() => {
-    const saved = localStorage.getItem('ai_fleet_master_portfolio_v3');
+    const saved = localStorage.getItem('ai_fleet_master_portfolio_v4');
     return saved ? JSON.parse(saved) : INITIAL_MASTER_PORTFOLIO;
   });
 
   const [activeTrades, setActiveTrades] = useState<TradePosition[]>(() => {
-    const saved = localStorage.getItem('ai_fleet_active_trades_v3');
+    const saved = localStorage.getItem('ai_fleet_active_trades_v4');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -94,7 +94,7 @@ export const App: React.FC = () => {
   });
 
   const [auditLogs, setAuditLogs] = useState<TradePosition[]>(() => {
-    const saved = localStorage.getItem('ai_fleet_audit_logs_v3');
+    const saved = localStorage.getItem('ai_fleet_audit_logs_v4');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -118,7 +118,7 @@ export const App: React.FC = () => {
   const [liveFeedActive, setLiveFeedActive] = useState<boolean>(true);
 
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => {
-    const saved = localStorage.getItem('ai_fleet_tg_config_v3');
+    const saved = localStorage.getItem('ai_fleet_tg_config_v4');
     return saved ? JSON.parse(saved) : {
       botToken: '',
       chatId: '',
@@ -132,7 +132,7 @@ export const App: React.FC = () => {
   });
 
   const [telegramLogs, setTelegramLogs] = useState<TelegramLog[]>(() => {
-    const saved = localStorage.getItem('ai_fleet_tg_logs_v3');
+    const saved = localStorage.getItem('ai_fleet_tg_logs_v4');
     if (saved) return JSON.parse(saved);
     return [
       {
@@ -150,7 +150,7 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('stages');
   const [is247Running, setIs247Running] = useState<boolean>(true);
   const [uptimeSeconds, setUptimeSeconds] = useState<number>(() => {
-    const saved = localStorage.getItem('ai_fleet_uptime_seconds_v3');
+    const saved = localStorage.getItem('ai_fleet_uptime_seconds_v4');
     return saved !== null ? parseInt(saved, 10) || 0 : 0;
   });
   const [nextSummarySeconds, setNextSummarySeconds] = useState<number>(3600);
@@ -163,31 +163,31 @@ export const App: React.FC = () => {
 
   // Persistence effects
   useEffect(() => {
-    localStorage.setItem('ai_fleet_uptime_seconds_v3', uptimeSeconds.toString());
+    localStorage.setItem('ai_fleet_uptime_seconds_v4', uptimeSeconds.toString());
   }, [uptimeSeconds]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_bots_v3', JSON.stringify(bots));
+    localStorage.setItem('ai_fleet_bots_v4', JSON.stringify(bots));
   }, [bots]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_master_portfolio_v3', JSON.stringify(masterPortfolio));
+    localStorage.setItem('ai_fleet_master_portfolio_v4', JSON.stringify(masterPortfolio));
   }, [masterPortfolio]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_active_trades_v3', JSON.stringify(activeTrades));
+    localStorage.setItem('ai_fleet_active_trades_v4', JSON.stringify(activeTrades));
   }, [activeTrades]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_audit_logs_v3', JSON.stringify(auditLogs));
+    localStorage.setItem('ai_fleet_audit_logs_v4', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_tg_config_v3', JSON.stringify(telegramConfig));
+    localStorage.setItem('ai_fleet_tg_config_v4', JSON.stringify(telegramConfig));
   }, [telegramConfig]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_tg_logs_v3', JSON.stringify(telegramLogs));
+    localStorage.setItem('ai_fleet_tg_logs_v4', JSON.stringify(telegramLogs));
   }, [telegramLogs]);
 
   // Dispatch message helper
@@ -366,6 +366,10 @@ export const App: React.FC = () => {
       id: `trade-stage-${stage}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       symbol: `${coin.symbol}/USDT`,
       name: coin.name,
+      contractAddress: coin.contractAddress,
+      network: coin.network,
+      cmcUrl: coin.cmcUrl,
+      isVerified: true,
       direction,
       stage,
       initiatorBotId: initiatorBot.id,
@@ -517,9 +521,25 @@ export const App: React.FC = () => {
           const slHit = isLong ? currentPrice <= trade.stopLossPrice : currentPrice >= trade.stopLossPrice;
 
           if (tpHit) {
-            // Take Profit Executed!
-            const realizedProfit = Math.max(2.00, trade.targetProfitUsd);
-            
+            // Take Profit Executed! Real price-driven realized profit
+            const exactProfit = isLong 
+              ? trade.positionSize * ((currentPrice - trade.entryPrice) / trade.entryPrice)
+              : trade.positionSize * ((trade.entryPrice - currentPrice) / trade.entryPrice);
+            const realizedProfit = parseFloat(Math.max(0.50, exactProfit).toFixed(2));
+            const realizedProfitPercent = parseFloat(((realizedProfit / trade.margin) * 100).toFixed(2));
+
+            const closedRecord: TradePosition = {
+              ...updatedTrade,
+              id: `audit-tp-${trade.id}-${Date.now()}`,
+              status: 'CLOSED_TP',
+              stageAtClose: trade.stage,
+              closePrice: currentPrice,
+              realizedPnL: realizedProfit,
+              realizedPnLPercent: realizedProfitPercent,
+              exitTime: Date.now(),
+              exitReason: `🎯 Take-Profit Target Hit (Stage ${trade.stage} + $${realizedProfit.toFixed(2)} / +${realizedProfitPercent}% ROI)`,
+            };
+
             // Update Master Portfolio
             setMasterPortfolio(mp => {
               const newBal = parseFloat((mp.currentBalance + realizedProfit).toFixed(2));
@@ -559,23 +579,15 @@ export const App: React.FC = () => {
               return b;
             }));
 
-            const closedRecord: TradePosition = {
-              ...updatedTrade,
-              id: `audit-tp-${trade.id}-${Date.now()}`,
-              status: 'CLOSED_TP',
-              stageAtClose: trade.stage,
-              closePrice: currentPrice,
-              realizedPnL: realizedProfit,
-              realizedPnLPercent: parseFloat(((realizedProfit / trade.margin) * 100).toFixed(2)),
-              exitTime: Date.now(),
-              exitReason: `🎯 Take-Profit Target Hit (Stage ${trade.stage} + $${realizedProfit.toFixed(2)} / +${((realizedProfit / trade.margin) * 100).toFixed(1)}% ROI)`,
-            };
-
             setAuditLogs(logs => deduplicateById([closedRecord, ...logs]));
 
           } else if (slHit) {
-            // Stop Loss Hard Capped at Stage Risk
-            const realizedLoss = -Math.abs(trade.maxLossUsd);
+            // Stop Loss Realized PnL based on actual price move
+            const exactLoss = isLong 
+              ? trade.positionSize * ((currentPrice - trade.entryPrice) / trade.entryPrice)
+              : trade.positionSize * ((trade.entryPrice - currentPrice) / trade.entryPrice);
+            const realizedLoss = parseFloat(Math.min(-0.50, exactLoss).toFixed(2));
+            const realizedLossPercent = parseFloat(((realizedLoss / trade.margin) * 100).toFixed(2));
             
             // Trigger Autonomous Self-Learning & Evolution Engine!
             const evolution = analyzeTradeMistakeAndEvolve(
@@ -594,7 +606,7 @@ export const App: React.FC = () => {
               stageAtClose: trade.stage,
               closePrice: currentPrice,
               realizedPnL: realizedLoss,
-              realizedPnLPercent: parseFloat(((realizedLoss / trade.margin) * 100).toFixed(2)),
+              realizedPnLPercent: realizedLossPercent,
               exitTime: Date.now(),
               exitReason: `🛑 Stop-Loss Hit (Stage ${trade.stage} - $${Math.abs(realizedLoss).toFixed(2)} / Master Capital Guarded)`,
               mistakeAnalysis: `Post-Mortem: ${evolution.learningNote.mistakeIdentified} | Rule Adjusted: ${evolution.learningNote.parameterAdjustment}`,

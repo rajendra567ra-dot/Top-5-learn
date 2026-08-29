@@ -90,6 +90,10 @@ export interface TradePosition {
   mistakeAnalysis?: string;
   exitReason?: string;
   stageAtClose?: ConsensusStage;
+  contractAddress?: string;
+  network?: string;
+  cmcUrl?: string;
+  isVerified?: boolean;
 }
 
 export interface CryptoCoin {
@@ -113,6 +117,10 @@ export interface CryptoCoin {
   confirmingBotsCount?: number; // 1 to 5
   recommendation: Recommendation;
   category: 'Layer 1' | 'DeFi' | 'AI / DePIN' | 'Meme' | 'Layer 2' | 'Infrastructure' | 'Gaming';
+  contractAddress?: string;
+  network?: string;
+  cmcUrl?: string;
+  isVerified?: boolean;
 }
 
 export interface StagePerformanceStats {
