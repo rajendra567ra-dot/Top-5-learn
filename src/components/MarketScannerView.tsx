@@ -10,10 +10,11 @@ import {
   Radio, 
   Sparkles, 
   Bot, 
-  Flame,
+  Layers,
   CheckCircle2
 } from 'lucide-react';
-import { CryptoCoin, TradingBot } from '../types';
+import { CryptoCoin, TradingBot, ConsensusStage } from '../types';
+import { STAGE_CONFIGS } from '../services/tradingEngine';
 
 interface MarketStats {
   totalMarketCap: number;
@@ -46,7 +47,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedSignal, setSelectedSignal] = useState<string>('ALL');
-  const [sortBy, setSortBy] = useState<'rank' | 'change' | 'volume' | 'rsi' | 'sentiment'>('rank');
+  const [sortBy, setSortBy] = useState<'rank' | 'change' | 'volume' | 'rsi' | 'sentiment' | 'consensus'>('rank');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
   const itemsPerPage = 25;
@@ -67,7 +68,8 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
       let matchesSignal = true;
       if (selectedSignal === 'STRONG_LONG') matchesSignal = coin.recommendation === 'STRONG_LONG';
       else if (selectedSignal === 'STRONG_SHORT') matchesSignal = coin.recommendation === 'STRONG_SHORT';
-      else if (selectedSignal.startsWith('bot-')) matchesSignal = coin.matchingBots.includes(selectedSignal);
+      else if (selectedSignal === 'STAGE_3_PLUS') matchesSignal = (coin.matchingBots?.length || 1) >= 3;
+      else if (selectedSignal.startsWith('bot-')) matchesSignal = coin.matchingBots?.includes(selectedSignal);
 
       return matchesSearch && matchesCat && matchesSignal;
     }).sort((a, b) => {
@@ -78,6 +80,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
       else if (sortBy === 'volume') { valA = a.volume24h; valB = b.volume24h; }
       else if (sortBy === 'rsi') { valA = a.rsi; valB = b.rsi; }
       else if (sortBy === 'sentiment') { valA = a.sentimentScore; valB = b.sentimentScore; }
+      else if (sortBy === 'consensus') { valA = a.matchingBots?.length || 1; valB = b.matchingBots?.length || 1; }
 
       return sortOrder === 'asc' ? valA - valB : valB - valA;
     });
@@ -86,7 +89,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
   const totalPages = Math.ceil(filteredCoins.length / itemsPerPage);
   const displayedCoins = filteredCoins.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
-  const handleSort = (field: 'rank' | 'change' | 'volume' | 'rsi' | 'sentiment') => {
+  const handleSort = (field: 'rank' | 'change' | 'volume' | 'rsi' | 'sentiment' | 'consensus') => {
     if (sortBy === field) {
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -103,26 +106,24 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
 
   return (
     <div id="market-scanner-view" className="space-y-6">
+      
       {/* Scanner Header & Global Controls */}
-      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2 font-sans">
               <Globe className="w-5 h-5 text-blue-600" />
-              CMC TOP 500 CRYPTO LIVE MARKET SCANNER
+              CMC Top 500 Market Scanner (Multi-Bot Consensus Radar)
             </h2>
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
-                LIVE Moving Market Active
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                500 Coins Feed
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                Live Market Feed Active
               </span>
             </div>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Continuously evaluates real-time prices, machine learning sentiment, RSI exhaustion, and volatility breakout across the top 500 cryptocurrency universe.
+          <p className="text-xs text-slate-500 mt-1">
+            Continuously scans 500 crypto assets for cross-bot confirmations. If 1 bot detects a setup ➔ Stage 1; when multiple bots confirm ➔ Scales up to Stage 5.
           </p>
         </div>
 
@@ -131,15 +132,15 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
             id="run-fleet-scan-btn"
             onClick={onRunLiveFleetScan}
             disabled={isScanning}
-            className="px-4 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer font-sans"
           >
             <Radio className={`w-4 h-4 ${isScanning ? 'animate-spin text-white' : 'text-blue-100'}`} />
-            <span>{isScanning ? 'Syncing Live Market...' : 'Sync Live Prices Now'}</span>
+            <span>{isScanning ? 'Syncing Live Prices...' : 'Sync Live Prices Now'}</span>
           </button>
         </div>
       </div>
 
-      {/* Real-Time Market Stats Overview Strip */}
+      {/* Real-Time Market Stats Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-xl bg-white border border-slate-200 shadow-xs">
           <div className="text-[10px] uppercase font-bold text-slate-400 font-sans">Crypto Market Cap</div>
@@ -173,7 +174,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
               Greed
             </span>
           </div>
-          <div className="text-[11px] text-slate-500 font-medium mt-0.5">ML Social Sentiment High</div>
+          <div className="text-[11px] text-slate-500 font-medium mt-0.5">ML Social Sentiment</div>
         </div>
       </div>
 
@@ -189,7 +190,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
-              placeholder="Search coin symbol or name (e.g. BTC, SUI)..."
+              placeholder="Search symbol or name (e.g. BTC, ETH, SOL)..."
               className="w-full pl-9 pr-4 py-2 bg-slate-50 text-slate-900 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-blue-600 font-sans"
             />
           </div>
@@ -199,7 +200,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
             <span className="text-[11px] text-slate-500 font-bold uppercase mr-1">Signal:</span>
             <button
               onClick={() => { setSelectedSignal('ALL'); setPage(1); }}
-              className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all border ${
+              className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all border cursor-pointer ${
                 selectedSignal === 'ALL'
                   ? 'bg-blue-50 text-blue-700 border-blue-200 font-semibold'
                   : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -208,8 +209,18 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
               All
             </button>
             <button
+              onClick={() => { setSelectedSignal('STAGE_3_PLUS'); setPage(1); }}
+              className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all border cursor-pointer ${
+                selectedSignal === 'STAGE_3_PLUS'
+                  ? 'bg-amber-50 text-amber-700 border-amber-200 font-semibold'
+                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              ⚡ High Consensus (Stage 3+)
+            </button>
+            <button
               onClick={() => { setSelectedSignal('STRONG_LONG'); setPage(1); }}
-              className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all border ${
+              className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all border cursor-pointer ${
                 selectedSignal === 'STRONG_LONG'
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold'
                   : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -219,7 +230,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
             </button>
             <button
               onClick={() => { setSelectedSignal('STRONG_SHORT'); setPage(1); }}
-              className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all border ${
+              className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all border cursor-pointer ${
                 selectedSignal === 'STRONG_SHORT'
                   ? 'bg-rose-50 text-rose-700 border-rose-200 font-semibold'
                   : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -227,31 +238,18 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
             >
               ⚡ Strong Shorts
             </button>
-            {bots.map((b) => (
-              <button
-                key={b.id}
-                onClick={() => { setSelectedSignal(b.id); setPage(1); }}
-                className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all border whitespace-nowrap ${
-                  selectedSignal === b.id
-                    ? 'bg-purple-50 text-purple-700 border-purple-200 font-semibold'
-                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                {b.name}
-              </button>
-            ))}
           </div>
 
         </div>
 
-        {/* Category Pills */}
+        {/* Category Sector Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
           <span className="text-[11px] text-slate-500 font-bold uppercase mr-1">Sector:</span>
           {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => { setSelectedCategory(cat); setPage(1); }}
-              className={`px-2.5 py-1 rounded-xl transition-all border text-xs whitespace-nowrap ${
+              className={`px-2.5 py-1 rounded-xl transition-all border text-xs whitespace-nowrap cursor-pointer ${
                 selectedCategory === cat
                   ? 'bg-blue-50 text-blue-700 border-blue-200 font-semibold'
                   : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
@@ -264,7 +262,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
       </div>
 
       {/* Market Coins Table */}
-      <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm">
+      <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-mono">
             <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase border-b border-slate-200 select-none">
@@ -284,15 +282,9 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="py-3 px-4 text-right cursor-pointer hover:text-slate-900" onClick={() => handleSort('volume')}>
-                  <div className="flex items-center justify-end gap-1">
-                    <span>24h Volume</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th className="py-3 px-4 text-center cursor-pointer hover:text-slate-900" onClick={() => handleSort('rsi')}>
+                <th className="py-3 px-4 text-center cursor-pointer hover:text-slate-900" onClick={() => handleSort('consensus')}>
                   <div className="flex items-center justify-center gap-1">
-                    <span>14-RSI</span>
+                    <span>Consensus Stage</span>
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
@@ -302,22 +294,22 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                     <ArrowUpDown className="w-3 h-3" />
                   </div>
                 </th>
-                <th className="py-3 px-4 text-center">Bot Matches</th>
-                <th className="py-3 px-4 text-right">Autonomous Action</th>
+                <th className="py-3 px-4 text-center">Confirming Bot Brains</th>
+                <th className="py-3 px-4 text-right">Execute Staged Trade</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700">
+            <tbody className="divide-y divide-slate-100 text-slate-700 font-sans">
               {displayedCoins.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
                     No coins found matching the search and filter criteria.
                   </td>
                 </tr>
               ) : (
                 displayedCoins.map((coin) => {
                   const isPos = coin.change24h >= 0;
-                  const isStrongLong = coin.recommendation === 'STRONG_LONG';
-                  const isStrongShort = coin.recommendation === 'STRONG_SHORT';
+                  const matchingCount = Math.min(5, Math.max(1, coin.matchingBots?.length || 1)) as ConsensusStage;
+                  const stageConfig = STAGE_CONFIGS[matchingCount] || STAGE_CONFIGS[1];
 
                   return (
                     <tr 
@@ -326,9 +318,9 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                       className="hover:bg-slate-50 transition-colors"
                     >
                       {/* Rank & Symbol */}
-                      <td className="py-3 px-4">
+                      <td className="py-3 px-4 font-mono">
                         <div className="flex items-center gap-2.5">
-                          <span className="text-[10px] text-slate-400 w-6 font-mono">#{coin.rank}</span>
+                          <span className="text-[10px] text-slate-400 w-6">#{coin.rank}</span>
                           <div>
                             <div className="font-bold text-slate-900 flex items-center gap-1.5 font-sans">
                               <span>{coin.symbol}</span>
@@ -342,12 +334,12 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                       </td>
 
                       {/* Price */}
-                      <td className="py-3 px-4 text-right font-bold text-slate-900">
+                      <td className="py-3 px-4 text-right font-bold text-slate-900 font-mono">
                         ${coin.price < 0.01 ? coin.price.toFixed(6) : coin.price < 1 ? coin.price.toFixed(4) : coin.price.toFixed(2)}
                       </td>
 
                       {/* 24h Change */}
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3 px-4 text-right font-mono">
                         <span className={`inline-flex items-center gap-0.5 font-bold ${
                           isPos ? 'text-emerald-600' : 'text-rose-600'
                         }`}>
@@ -356,24 +348,19 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                         </span>
                       </td>
 
-                      {/* Volume */}
-                      <td className="py-3 px-4 text-right text-slate-600">
-                        {formatLargeNum(coin.volume24h)}
-                      </td>
-
-                      {/* RSI Indicator */}
-                      <td className="py-3 px-4 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          coin.rsi <= 30 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                          coin.rsi >= 70 ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                          'bg-slate-100 text-slate-700'
-                        }`}>
-                          {coin.rsi} {coin.rsi <= 30 ? 'OVERSOLD' : coin.rsi >= 70 ? 'OVERBOUGHT' : ''}
+                      {/* Consensus Stage */}
+                      <td className="py-3 px-4 text-center font-mono">
+                        <span 
+                          className="px-2.5 py-1 rounded-full text-[10px] font-black tracking-wide uppercase inline-flex items-center gap-1"
+                          style={{ backgroundColor: `${stageConfig.accentColor}15`, color: stageConfig.accentColor }}
+                        >
+                          <Layers className="w-2.5 h-2.5" />
+                          Stage {matchingCount} ({matchingCount} Bot{matchingCount > 1 ? 's' : ''})
                         </span>
                       </td>
 
-                      {/* Sentiment Gauge */}
-                      <td className="py-3 px-4 text-center">
+                      {/* AI Sentiment */}
+                      <td className="py-3 px-4 text-center font-mono">
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold ${
                           coin.sentimentScore > 40 ? 'text-emerald-700 bg-emerald-50' :
                           coin.sentimentScore < -40 ? 'text-rose-700 bg-rose-50' :
@@ -385,17 +372,15 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
 
                       {/* Matching Bots */}
                       <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1 flex-wrap max-w-[140px] mx-auto">
-                          {coin.matchingBots.length === 0 ? (
-                            <span className="text-[10px] text-slate-400 font-sans">Neutral</span>
-                          ) : (
+                        <div className="flex items-center justify-center gap-1 flex-wrap max-w-[160px] mx-auto">
+                          {coin.matchingBots && coin.matchingBots.length > 0 ? (
                             coin.matchingBots.map(botId => {
                               const b = bots.find(x => x.id === botId);
                               if (!b) return null;
                               return (
                                 <span 
                                   key={botId}
-                                  className="px-1.5 py-0.5 rounded text-[9px] font-bold border"
+                                  className="px-1.5 py-0.5 rounded text-[9px] font-bold border font-mono"
                                   style={{
                                     backgroundColor: `${b.accentColor}10`,
                                     borderColor: `${b.accentColor}30`,
@@ -407,24 +392,25 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                                 </span>
                               );
                             })
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-sans">Neutral</span>
                           )}
                         </div>
                       </td>
 
                       {/* Action */}
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Quick assign to first matching bot or default */}
+                        <div className="flex items-center justify-end gap-1.5 font-sans">
                           <button
                             id={`trade-action-${coin.symbol}`}
                             onClick={() => {
-                              const botId = coin.matchingBots[0] || 'bot-1';
+                              const botId = coin.matchingBots && coin.matchingBots[0] ? coin.matchingBots[0] : 'bot-1';
                               onTradeCoinWithBot(coin, botId);
                             }}
-                            className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all flex items-center gap-1"
+                            className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all flex items-center gap-1 cursor-pointer"
                           >
                             <Zap className="w-3 h-3 text-blue-600" />
-                            <span>Auto-Trade</span>
+                            <span>Stage {matchingCount} Trade</span>
                           </button>
                         </div>
                       </td>
@@ -437,7 +423,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
           </table>
         </div>
 
-        {/* Pagination Bar */}
+        {/* Pagination */}
         <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs font-sans text-slate-500">
           <div>
             Showing {(page - 1) * itemsPerPage + 1} to {Math.min(page * itemsPerPage, filteredCoins.length)} of {filteredCoins.length} Coins (CMC Top 500)
@@ -446,7 +432,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
             <button
               disabled={page === 1}
               onClick={() => setPage(prev => Math.max(1, prev - 1))}
-              className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 disabled:opacity-40"
+              className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 disabled:opacity-40 cursor-pointer"
             >
               Previous
             </button>
@@ -454,13 +440,14 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
             <button
               disabled={page >= totalPages}
               onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
-              className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 disabled:opacity-40"
+              className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 disabled:opacity-40 cursor-pointer"
             >
               Next
             </button>
           </div>
         </div>
       </div>
+
     </div>
   );
 };

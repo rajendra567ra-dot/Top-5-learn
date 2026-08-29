@@ -11,20 +11,21 @@ import {
   Zap, 
   Clock,
   ShieldCheck,
-  Download
+  Layers,
+  BarChart3
 } from 'lucide-react';
-import { TradingBot, TradePosition, TelegramConfig } from '../types';
+import { TradingBot, TradePosition, TelegramConfig, MasterPortfolio } from '../types';
 
 interface HeaderProps {
   bots: TradingBot[];
   activeTrades: TradePosition[];
   auditLogs: TradePosition[];
+  masterPortfolio: MasterPortfolio;
   telegramConfig: TelegramConfig;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenTelegramModal: () => void;
   onOpenResetModal: () => void;
-  onOpenExportModal: () => void;
   onSendTelegramSummary: () => void;
   is247Running: boolean;
   setIs247Running: (val: boolean | ((prev: boolean) => boolean)) => void;
@@ -36,12 +37,12 @@ export const Header: React.FC<HeaderProps> = ({
   bots,
   activeTrades,
   auditLogs,
+  masterPortfolio,
   telegramConfig,
   activeTab,
   setActiveTab,
   onOpenTelegramModal,
   onOpenResetModal,
-  onOpenExportModal,
   onSendTelegramSummary,
   is247Running,
   setIs247Running,
@@ -65,12 +66,12 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Brand & Subtitle */}
           <div className="flex items-center gap-3.5">
             <div id="fleet-logo-badge" className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-xs">
-              <Bot className="w-6 h-6" />
+              <Layers className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2.5">
                 <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 font-sans">
-                  NEXUS FIVE <span className="text-blue-600 font-medium">• AI CLUSTER</span>
+                  NEXUS FIVE <span className="text-blue-600 font-medium">• CONSENSUS FLEET</span>
                 </h1>
                 <div 
                   id="live-status-indicator" 
@@ -80,42 +81,32 @@ export const Header: React.FC<HeaderProps> = ({
                       : 'bg-amber-50 text-amber-700 border-amber-200'
                   }`}
                 >
-                  <span className={`w-2 h-2 rounded-full ${is247Running ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                  <span className={`w-2 h-2 rounded-full ${is247Running ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
                   24/7 {is247Running ? 'ACTIVE' : 'PAUSED'}
                 </div>
               </div>
               <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-0.5">
-                Autonomous Trading Node | 5 Specialist Bots ($100 Each) | 24/7 Monitoring
+                Multi-Bot Staged Consensus Execution • $1,000 Master Portfolio • Self-Evolving AI
               </p>
             </div>
           </div>
 
-          {/* Quick Action Buttons */}
+          {/* Action Buttons */}
           <div className="flex items-center flex-wrap gap-2">
-            <button
-              id="export-project-btn"
-              onClick={onOpenExportModal}
-              title="Download full project code, data, and VisiHost 24/7 PM2 deployment package"
-              className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer hover:shadow-md active:scale-95"
-            >
-              <Download className="w-3.5 h-3.5 text-blue-100" />
-              <span>Download for VisiHost (ZIP)</span>
-            </button>
-
             <button
               id="reset-portfolio-btn"
               onClick={onOpenResetModal}
-              className="px-3 py-1.5 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-all flex items-center gap-1.5"
+              className="px-3 py-1.5 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset ($100 Base)</span>
+              <span>Reset ($1,000 Base)</span>
             </button>
 
             <button
               id="send-telegram-summary-btn"
               onClick={onSendTelegramSummary}
               disabled={isSendingTelegram}
-              className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
             >
               <Send className={`w-3.5 h-3.5 ${isSendingTelegram ? 'animate-spin' : ''}`} />
               <span>{isSendingTelegram ? 'Dispatching...' : 'Telegram Dispatch'}</span>
@@ -124,12 +115,12 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="telegram-setup-btn"
               onClick={onOpenTelegramModal}
-              className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all flex items-center gap-1.5"
+              className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <Settings className="w-3.5 h-3.5 text-slate-500" />
               <span>Uplink Config</span>
               {telegramConfig.enabled && (
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
               )}
             </button>
           </div>
@@ -137,33 +128,36 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Navigation Tabs */}
         <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          
+          {/* Tab: Stage Analytics Dashboard */}
           <button
-            id="tab-bots-btn"
-            onClick={() => setActiveTab('bots')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border ${
-              activeTab === 'bots'
+            id="tab-stages-btn"
+            onClick={() => setActiveTab('stages')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border cursor-pointer ${
+              activeTab === 'stages'
                 ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
-            <Bot className={`w-3.5 h-3.5 ${activeTab === 'bots' ? 'text-blue-400' : 'text-slate-400'}`} />
-            <span>5 Specialist Bots</span>
+            <BarChart3 className={`w-3.5 h-3.5 ${activeTab === 'stages' ? 'text-amber-400' : 'text-slate-400'}`} />
+            <span>Stage Performance Dashboard</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              activeTab === 'bots' ? 'bg-slate-800 text-blue-300' : 'bg-slate-100 text-slate-600'
-            }`}>5</span>
+              activeTab === 'stages' ? 'bg-slate-800 text-amber-300' : 'bg-amber-50 text-amber-700 border border-amber-200'
+            }`}>Stages 1-5</span>
           </button>
 
+          {/* Tab: Live Trades */}
           <button
             id="tab-trades-btn"
             onClick={() => setActiveTab('trades')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border cursor-pointer ${
               activeTab === 'trades'
                 ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
             <Activity className={`w-3.5 h-3.5 ${activeTab === 'trades' ? 'text-emerald-400' : 'text-slate-400'}`} />
-            <span>Live Trades</span>
+            <span>Live Staged Trades</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
               activeTab === 'trades' ? 'bg-slate-800 text-emerald-300' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
             }`}>
@@ -171,33 +165,52 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
+          {/* Tab: 5 Specialist Bots */}
+          <button
+            id="tab-bots-btn"
+            onClick={() => setActiveTab('bots')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border cursor-pointer ${
+              activeTab === 'bots'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <Bot className={`w-3.5 h-3.5 ${activeTab === 'bots' ? 'text-blue-400' : 'text-slate-400'}`} />
+            <span>5 Specialist Consensus Brains</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              activeTab === 'bots' ? 'bg-slate-800 text-blue-300' : 'bg-slate-100 text-slate-600'
+            }`}>5</span>
+          </button>
+
+          {/* Tab: Top 500 Market Scanner */}
           <button
             id="tab-scanner-btn"
             onClick={() => setActiveTab('scanner')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border cursor-pointer ${
               activeTab === 'scanner'
                 ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
             <Globe className={`w-3.5 h-3.5 ${activeTab === 'scanner' ? 'text-cyan-400' : 'text-slate-400'}`} />
-            <span>Top 500 Market Scanner</span>
+            <span>Top 500 Scanner</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
               activeTab === 'scanner' ? 'bg-slate-800 text-cyan-300' : 'bg-blue-50 text-blue-700 border border-blue-200'
             }`}>500</span>
           </button>
 
+          {/* Tab: AI Brain & Self-Learning */}
           <button
             id="tab-brain-btn"
             onClick={() => setActiveTab('brain')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border cursor-pointer ${
               activeTab === 'brain'
                 ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
             <BrainCircuit className={`w-3.5 h-3.5 ${activeTab === 'brain' ? 'text-purple-400' : 'text-slate-400'}`} />
-            <span>AI Brain & Mistake Learning</span>
+            <span>AI Brain & Self-Learning</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
               activeTab === 'brain' ? 'bg-slate-800 text-purple-300' : 'bg-purple-50 text-purple-700 border border-purple-200'
             }`}>
@@ -205,17 +218,18 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
+          {/* Tab: Trade Audit Logs */}
           <button
             id="tab-audit-btn"
             onClick={() => setActiveTab('audit')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border cursor-pointer ${
               activeTab === 'audit'
                 ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
             <History className={`w-3.5 h-3.5 ${activeTab === 'audit' ? 'text-slate-300' : 'text-slate-400'}`} />
-            <span>Trade Audit Logs</span>
+            <span>Audit Logs</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
               activeTab === 'audit' ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
             }`}>
@@ -223,10 +237,11 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
+          {/* Tab: Telegram Hub */}
           <button
             id="tab-telegram-btn"
             onClick={() => setActiveTab('telegram')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border cursor-pointer ${
               activeTab === 'telegram'
                 ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
@@ -249,7 +264,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">Cadence: {telegramConfig.summaryIntervalMinutes}m</span>
             <span className="flex items-center gap-1 text-slate-600 font-medium">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              Dynamic 5% Compounding • Max 3% SL • $2+ Min TP
+              Consensus Stages 1-5 • $1K Master Pool • Autonomous Learning Active
             </span>
           </div>
         </div>

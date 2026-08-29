@@ -10,18 +10,18 @@ import {
   BrainCircuit, 
   ArrowUpRight, 
   ArrowDownRight, 
-  Sliders, 
   CheckCircle2,
-  XCircle,
-  ExternalLink,
-  Target,
-  Shield
+  Users,
+  Layers,
+  Sparkles
 } from 'lucide-react';
-import { TradingBot, TradePosition } from '../types';
+import { TradingBot, TradePosition, MasterPortfolio } from '../types';
+import { STAGE_CONFIGS } from '../services/tradingEngine';
 
 interface BotsDashboardProps {
   bots: TradingBot[];
   activeTrades: TradePosition[];
+  masterPortfolio?: MasterPortfolio;
   onManualTradeClick: (bot: TradingBot) => void;
   onCloseTrade: (tradeId: string) => void;
   onToggleBotStatus: (botId: string) => void;
@@ -31,6 +31,7 @@ interface BotsDashboardProps {
 export const BotsDashboard: React.FC<BotsDashboardProps> = ({
   bots,
   activeTrades,
+  masterPortfolio,
   onManualTradeClick,
   onCloseTrade,
   onToggleBotStatus,
@@ -38,34 +39,51 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
 }) => {
   return (
     <div id="specialist-bots-grid" className="space-y-6">
-      <div className="flex items-center justify-between">
+      
+      {/* Section Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Bot className="w-5 h-5 text-blue-600" />
-            5 SPECIALIST BOTS FLEET DASHBOARD
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Autonomous execution engines with distinct strategies, machine learning brains, and dynamic 5% compounding.
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2 font-sans">
+              <Bot className="w-5 h-5 text-blue-600" />
+              5 Specialist Consensus Brains ($1,000 Master Fleet)
+            </h2>
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              Unlimited Concurrent Trading
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1 max-w-3xl">
+            Each bot operates as an autonomous signal generator and validation engine. When a setup occurs, bots cross-confirm the signal to determine entry stage (1 to 5). Bots trade freely without arbitrary position limits.
           </p>
         </div>
-        <div className="text-xs font-semibold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 hidden sm:block">
-          All 5 Bots Initialized @ $100.00 Base
+
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-200 font-mono text-right">
+            <div className="text-[10px] uppercase font-bold text-slate-400">Master Portfolio Base</div>
+            <div className="text-base font-black text-slate-900">
+              ${(masterPortfolio?.currentBalance || 1000).toFixed(2)} USDT
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Bots Grid */}
       <div className="grid grid-cols-1 gap-5">
         {bots.map((bot) => {
-          const botTrades = activeTrades.filter(t => t.botId === bot.id);
+          // Find all active trades where this bot is either initiator or confirming
+          const participatingTrades = activeTrades.filter(
+            t => t.initiatorBotId === bot.id || t.confirmingBotIds.includes(bot.id)
+          );
+
           const totalClosed = bot.winTrades + bot.lossTrades;
           const winRate = totalClosed > 0 ? (bot.winTrades / totalClosed) * 100 : 0;
-          const netPnL = bot.balance - bot.initialBalance;
-          const netPnLPct = (netPnL / bot.initialBalance) * 100;
+          const assistedPnL = bot.assistedPnL || bot.totalPnL || 0;
 
           return (
             <div
               key={bot.id}
               id={`bot-card-${bot.id}`}
-              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm relative overflow-hidden transition-all hover:border-slate-300"
+              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-slate-300 transition-all relative overflow-hidden"
             >
               {/* Header Row */}
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
@@ -73,18 +91,19 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                 {/* Bot Identity & Strategy Details */}
                 <div className="flex items-start gap-3.5">
                   <div 
-                    className="w-12 h-12 rounded-xl flex items-center justify-center font-mono font-bold text-sm shrink-0 border"
+                    className="w-12 h-12 rounded-xl flex items-center justify-center font-mono font-black text-base shrink-0 border"
                     style={{
-                      backgroundColor: `${bot.accentColor}10`,
+                      backgroundColor: `${bot.accentColor}12`,
                       borderColor: `${bot.accentColor}30`,
                       color: bot.accentColor,
                     }}
                   >
                     {bot.number}
                   </div>
+
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                      <h3 className="text-base sm:text-lg font-bold text-slate-900 font-sans">
                         {bot.number}. {bot.name}
                       </h3>
                       <span className="text-xs font-semibold text-slate-500">
@@ -97,7 +116,7 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                         {bot.strategyBadge}
                       </span>
                       <span className="text-[11px] font-mono text-slate-500">
-                        TF: {bot.timeframe} • Leverage: {bot.minLeverage}x-{bot.maxLeverage}x
+                        TF: {bot.timeframe} • Consensus Weight: {((bot.strategyWeight || 0.2) * 100).toFixed(0)}%
                       </span>
                     </div>
 
@@ -114,15 +133,15 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       : 'bg-amber-50 text-amber-700 border-amber-200'
                   }`}>
-                    <span className={`w-2 h-2 rounded-full ${bot.status === 'ACTIVE' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                    <span className={`w-2 h-2 rounded-full ${bot.status === 'ACTIVE' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
                     24/7 {bot.status}
                   </div>
 
                   <button
                     id={`toggle-bot-${bot.id}`}
                     onClick={() => onToggleBotStatus(bot.id)}
-                    title={bot.status === 'ACTIVE' ? 'Pause Bot' : 'Activate Bot'}
-                    className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition-all"
+                    title={bot.status === 'ACTIVE' ? 'Pause Signal Scanning' : 'Activate Signal Scanning'}
+                    className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition-all cursor-pointer"
                   >
                     {bot.status === 'ACTIVE' ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 text-emerald-600" />}
                   </button>
@@ -130,44 +149,42 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                   <button
                     id={`auto-trade-btn-${bot.id}`}
                     onClick={() => onManualTradeClick(bot)}
-                    title="Trigger immediate autonomous market scan and trade execution for this bot"
-                    className="px-3 py-1.5 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl transition-all flex items-center gap-1.5 shadow-xs active:scale-95"
+                    title="Scan top 500 coins and trigger immediate staged trade execution from this specialist bot"
+                    className="px-3.5 py-1.5 text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
                   >
                     <Zap className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
-                    <span>Auto-Trade Now</span>
+                    <span>Trigger Signal Scan</span>
                   </button>
                 </div>
 
               </div>
 
-              {/* Bot Financial & Performance Grid */}
-              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Bot Performance Metrics Grid */}
+              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 font-sans">
                 
-                {/* Account Balance Card */}
+                {/* Signals & Confirmations */}
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                   <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span className="uppercase font-bold">Bot Account Balance</span>
-                    <span className="font-mono">Base: ${bot.initialBalance.toFixed(2)}</span>
+                    <span className="uppercase font-bold">Consensus Activity</span>
+                    <span className="font-mono text-blue-600 font-bold">Weight {((bot.strategyWeight || 0.2) * 100).toFixed(0)}%</span>
                   </div>
                   <div className="mt-1.5 flex items-baseline justify-between">
                     <span className="text-xl font-bold text-slate-900 font-mono">
-                      ${bot.balance.toFixed(2)}
+                      {bot.signalsGenerated || 0} <span className="text-xs font-normal text-slate-500">Signals</span>
                     </span>
-                    <span className={`text-xs font-bold font-mono ${
-                      netPnL >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                    }`}>
-                      {netPnL >= 0 ? '+' : ''}${netPnL.toFixed(2)} ({netPnL >= 0 ? '+' : ''}{netPnLPct.toFixed(1)}%)
+                    <span className="text-xs font-mono font-semibold text-slate-600">
+                      {bot.confirmationsContributed || 0} Confirms
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-500 mt-1 font-mono">
-                    Next Margin: ${(bot.balance * 0.05).toFixed(2)} (5% dynamic)
+                    Participating in {participatingTrades.length} Active Trades
                   </div>
                 </div>
 
-                {/* Total Trades & W/L */}
+                {/* Assisted Closed Trades & W/L */}
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                   <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span className="uppercase font-bold">Total Closed Trades</span>
+                    <span className="uppercase font-bold">Assisted Closed Trades</span>
                     <span className="font-semibold text-slate-700">W / L Record</span>
                   </div>
                   <div className="mt-1.5 flex items-baseline justify-between">
@@ -181,25 +198,27 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                     </div>
                   </div>
                   <div className="text-[10px] text-slate-500 mt-1">
-                    Audit Confirmed Live
+                    Fleet Master PnL Contributed
                   </div>
                 </div>
 
-                {/* Win Rate */}
+                {/* Win Rate & PnL */}
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                   <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span className="uppercase font-bold">Win Rate %</span>
-                    <span className="font-mono text-blue-600 font-bold">{winRate.toFixed(1)}%</span>
+                    <span className="uppercase font-bold">Assisted Win Rate</span>
+                    <span className={`font-mono font-bold ${assistedPnL >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {assistedPnL >= 0 ? '+' : ''}${assistedPnL.toFixed(2)}
+                    </span>
                   </div>
                   <div className="w-full bg-slate-200 h-1.5 rounded-full mt-3 overflow-hidden">
                     <div 
                       className="bg-blue-600 h-full rounded-full transition-all"
                       style={{ width: `${winRate}%` }}
-                    ></div>
+                    />
                   </div>
                   <div className="text-[10px] text-slate-500 mt-2 font-mono flex justify-between">
-                    <span>Target: &gt;65%</span>
-                    <span>Min Win: &gt;$2.00</span>
+                    <span>Rate: <strong className="text-slate-800">{winRate.toFixed(1)}%</strong></span>
+                    <span>No Trade Limit Active</span>
                   </div>
                 </div>
 
@@ -208,7 +227,7 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="uppercase font-bold text-purple-700 flex items-center gap-1">
                       <BrainCircuit className="w-3.5 h-3.5 text-purple-600" />
-                      AI Brain Memory
+                      Autonomous Brain
                     </span>
                     <span className="px-1.5 py-0.2 rounded-md bg-purple-100 text-purple-700 text-[10px] font-mono font-semibold">
                       {bot.learningNotes.length} Lessons
@@ -216,13 +235,13 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                   </div>
                   <div className="mt-1 text-xs text-purple-900 line-clamp-2">
                     {bot.learningNotes.length > 0 
-                      ? bot.learningNotes[bot.learningNotes.length - 1].learnedLesson 
-                      : 'Brain AI actively monitoring market flow & adapting.'}
+                      ? bot.learningNotes[0].learnedLesson 
+                      : 'Brain actively diagnosing error post-mortems and tuning parameters.'}
                   </div>
                   <button
                     id={`view-brain-btn-${bot.id}`}
                     onClick={() => onViewBrainLessons(bot)}
-                    className="mt-2 text-[11px] text-purple-700 hover:text-purple-900 font-semibold flex items-center gap-1 transition-colors"
+                    className="mt-2 text-[11px] text-purple-700 hover:text-purple-900 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <span>View Mistake Learning Journal</span>
                     <ArrowUpRight className="w-3 h-3" />
@@ -231,36 +250,44 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
 
               </div>
 
-              {/* Active Running Positions Section for this Bot */}
+              {/* Active Participating Positions for this Bot */}
               <div className="mt-4 pt-3 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5 font-mono">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Active Positions ({botTrades.length} Running)
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Currently Participating Trades ({participatingTrades.length} Active)
                   </div>
                   <span className="text-[11px] text-slate-500">
-                    Target: &gt;$2.00 Net Win | Max 3% SL
+                    Dynamic Staged Sizing • Multi-Bot Consensus
                   </span>
                 </div>
 
-                {botTrades.length === 0 ? (
+                {participatingTrades.length === 0 ? (
                   <div className="p-3 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                    No active positions. The 24/7 autonomous engine is scanning the top 500 coin market for {bot.name} strategy triggers.
+                    No active positions for {bot.name} right now. Click "Trigger Signal Scan" to initiate a staged trade.
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {botTrades.map((trade) => {
+                    {participatingTrades.map((trade, tIdx) => {
                       const isLong = trade.direction === 'LONG';
                       const pnlIsPos = trade.unrealizedPnL >= 0;
+                      const config = STAGE_CONFIGS[trade.stage] || STAGE_CONFIGS[1];
 
                       return (
                         <div
-                          key={trade.id}
-                          id={`active-trade-row-${trade.id}`}
+                          key={`${bot.id}-${trade.id}-${tIdx}`}
+                          id={`active-trade-row-${bot.id}-${trade.id}`}
                           className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                         >
-                          <div className="flex items-center gap-3">
-                            <div className={`px-2 py-1 rounded-md text-xs font-bold font-mono flex items-center gap-1 ${
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <span 
+                              className="px-2 py-0.5 rounded text-[10px] font-bold font-mono"
+                              style={{ backgroundColor: `${config.accentColor}15`, color: config.accentColor }}
+                            >
+                              Stage {trade.stage}
+                            </span>
+
+                            <div className={`px-2 py-0.5 rounded text-xs font-bold font-mono flex items-center gap-1 ${
                               isLong 
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                                 : 'bg-rose-50 text-rose-700 border border-rose-200'
@@ -268,6 +295,7 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                               {isLong ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
                               {trade.symbol} {trade.direction} ({trade.leverage}x)
                             </div>
+
                             <div className="text-xs font-mono text-slate-600">
                               Entry: <strong className="text-slate-900">${trade.entryPrice}</strong> • Mark: <strong className="text-blue-600">${trade.currentPrice}</strong>
                             </div>
@@ -279,14 +307,14 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                                 {pnlIsPos ? '+' : ''}${trade.unrealizedPnL.toFixed(2)} ({pnlIsPos ? '+' : ''}{trade.unrealizedPnLPercent.toFixed(2)}%)
                               </div>
                               <div className="text-[10px] text-slate-500">
-                                Margin: ${trade.margin.toFixed(2)} | TP: ${trade.takeProfitPrice} (+${trade.targetProfitUsd.toFixed(2)})
+                                Margin: ${trade.margin.toFixed(2)} | TP: ${trade.takeProfitPrice}
                               </div>
                             </div>
 
                             <button
                               id={`close-trade-btn-${trade.id}`}
                               onClick={() => onCloseTrade(trade.id)}
-                              className="px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all"
+                              className="px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all cursor-pointer"
                             >
                               Close
                             </button>

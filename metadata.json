@@ -1,6 +1,6 @@
 {
-  "name": "5-Bot Autonomous AI Crypto Trading Fleet",
-  "description": "24/7 autonomous 5-bot crypto trading engine scanning top 500 coins with machine learning sentiment, AI mistake post-mortems, dynamic 5% compounding, 3% stop-loss, $2+ min take profit, and Telegram alerts.",
+  "name": "NEXUS FIVE • Multi-Bot Consensus Crypto Fleet",
+  "description": "Autonomous multi-bot consensus trading engine executing stage-wise trades (Stages 1-5) across top 500 crypto assets with unified $1,000 master portfolio and self-evolving AI heuristics.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

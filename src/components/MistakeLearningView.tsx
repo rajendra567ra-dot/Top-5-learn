@@ -154,12 +154,12 @@ export const MistakeLearningView: React.FC<MistakeLearningViewProps> = ({
             </p>
           </div>
         ) : (
-          filteredNotes.map(({ note, bot }) => {
+          filteredNotes.map(({ note, bot }, idx) => {
             const isLong = note.direction === 'LONG';
 
             return (
               <div
-                key={note.id}
+                key={`${bot.id}-${note.id}-${idx}`}
                 id={`learning-card-${note.id}`}
                 className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-4"
               >

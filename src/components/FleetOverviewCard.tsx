@@ -7,42 +7,44 @@ import {
   Clock, 
   Layers, 
   RotateCcw,
-  Cpu,
   CheckCircle2,
-  Download
+  BrainCircuit,
+  Bot
 } from 'lucide-react';
-import { TradingBot, TradePosition } from '../types';
+import { TradingBot, TradePosition, MasterPortfolio } from '../types';
 
 interface FleetOverviewCardProps {
   bots: TradingBot[];
   activeTrades: TradePosition[];
   auditLogs: TradePosition[];
+  masterPortfolio: MasterPortfolio;
   uptimeSeconds: number;
   is247Running: boolean;
   setIs247Running: (val: boolean | ((prev: boolean) => boolean)) => void;
   onOpenResetModal: () => void;
-  onOpenExportModal?: () => void;
 }
 
 export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
   bots,
   activeTrades,
   auditLogs,
+  masterPortfolio,
   uptimeSeconds,
   is247Running,
   setIs247Running,
   onOpenResetModal,
-  onOpenExportModal,
 }) => {
-  const initialBase = 500.00; // $100 * 5 bots
-  const currentTotalBalance = bots.reduce((sum, b) => sum + b.balance, 0);
-  const totalNetPnL = currentTotalBalance - initialBase;
+  const initialBase = masterPortfolio.initialBase; // $1,000.00
+  const currentTotalBalance = masterPortfolio.currentBalance;
+  const totalNetPnL = masterPortfolio.totalRealizedPnL;
   const netROI = (totalNetPnL / initialBase) * 100;
 
-  const totalWins = bots.reduce((sum, b) => sum + b.winTrades, 0);
-  const totalLosses = bots.reduce((sum, b) => sum + b.lossTrades, 0);
+  const totalWins = masterPortfolio.totalWins;
+  const totalLosses = masterPortfolio.totalLosses;
   const totalClosed = totalWins + totalLosses;
   const winRate = totalClosed > 0 ? (totalWins / totalClosed) * 100 : 0;
+
+  const totalMistakesEvolved = bots.reduce((sum, b) => sum + b.mistakesCount, 0);
 
   const formatUptime = (secs: number) => {
     const hrs = Math.floor(secs / 3600);
@@ -52,7 +54,8 @@ export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
   };
 
   return (
-    <div id="fleet-overview-container" className="space-y-4">
+    <div id="fleet-overview-container" className="space-y-4 font-sans">
+      
       {/* 24/7 Engine Heartbeat Status Panel */}
       <div id="continuous-engine-card" className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-xs relative overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -63,44 +66,36 @@ export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs uppercase tracking-wider font-bold text-slate-700 font-sans">
-                  24/7 Continuous Autonomous Engine:
+                  Autonomous Multi-Bot Consensus Engine:
                 </span>
                 <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold flex items-center gap-1.5 border ${
                   is247Running 
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                     : 'bg-amber-50 text-amber-700 border-amber-200'
                 }`}>
-                  <span className={`w-2 h-2 rounded-full ${is247Running ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-                  {is247Running ? 'RUNNING UNINTERRUPTED' : 'EXECUTION PAUSED'}
+                  <span className={`w-2 h-2 rounded-full ${is247Running ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                  24/7 {is247Running ? 'ACTIVE' : 'PAUSED'}
                 </span>
               </div>
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                  Worker Node: Online
+                  5 Signal Engines: Online
                 </span>
                 <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                  Local Sync: 100% Persisted
+                  $1,000 Master Portfolio
+                </span>
+                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
+                  <BrainCircuit className="w-3 h-3 text-purple-600" />
+                  Self-Evolving Heuristics (Gen #{masterPortfolio.evolutionGeneration || 4})
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                Background execution worker ensures market scanning, risk management, and Telegram dispatches operate uninterrupted.
+                Trades are validated stage-wise (Stages 1-5). Single unified $1,000 capital base with self-learning from bad trades.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3 shrink-0 flex-wrap sm:flex-nowrap">
-            {onOpenExportModal && (
-              <button
-                id="panel-export-btn"
-                onClick={onOpenExportModal}
-                className="px-3.5 py-2.5 rounded-xl text-xs font-bold font-sans bg-blue-600 hover:bg-blue-700 text-white transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
-                title="Download full project code & configs to host on VisiHost 24/7"
-              >
-                <Download className="w-3.5 h-3.5 text-blue-100" />
-                <span>Export for VisiHost</span>
-              </button>
-            )}
-
             <div className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-center font-mono">
               <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">FLEET 24/7 UPTIME</div>
               <div className="text-sm sm:text-base font-bold text-slate-900 flex items-center justify-center gap-1.5 mt-0.5">
@@ -112,31 +107,31 @@ export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
             <button
               id="keepalive-toggle-btn"
               onClick={() => setIs247Running(prev => !prev)}
-              className={`px-4 py-2.5 rounded-xl text-xs font-semibold font-sans transition-all flex items-center gap-2 border shadow-xs ${
+              className={`px-4 py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 border shadow-xs cursor-pointer ${
                 is247Running
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
                   : 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
               }`}
             >
               <Zap className="w-4 h-4 text-emerald-600" />
-              <span>24/7 Keep-Alive: {is247Running ? 'ON' : 'OFF'}</span>
+              <span>24/7 Engine: {is247Running ? 'ON' : 'OFF'}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Combined Portfolio Card */}
-      <div id="total-portfolio-combined-card" className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm relative overflow-hidden">
+      {/* Main Combined Portfolio Card ($1,000 Master Pool) */}
+      <div id="total-portfolio-combined-card" className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-xs relative overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           
           {/* Main Balance Display */}
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs uppercase tracking-wider font-bold text-slate-500 font-mono">
-                TOTAL PORTFOLIO COMBINED
+                MASTER FLEET PORTFOLIO
               </span>
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                5 BOTS FLEET ($100.00 EACH)
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                UNIFIED $1,000.00 CAPITAL BASE
               </span>
             </div>
 
@@ -153,13 +148,13 @@ export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
             </div>
 
             <div className="mt-2 text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span>(Initial Base: <strong className="text-slate-800">$500.00 USDT</strong>)</span>
+              <span>(Initial Base: <strong className="text-slate-800 font-mono">$1,000.00 USDT</strong>)</span>
               <span>•</span>
-              <span className="text-blue-700 font-medium">Dynamic 5% Compounding Margin</span>
+              <span className="text-blue-700 font-medium">Staged Risk Allocation (2% - 9%)</span>
               <span>•</span>
-              <span className="text-amber-700 font-medium">Hard Capped Max 3% Stop-Loss</span>
+              <span className="text-amber-700 font-medium">Autonomous Heuristic Evolution</span>
               <span>•</span>
-              <span className="text-emerald-700 font-medium">Minimum $2.00+ Net Win Rule</span>
+              <span className="text-emerald-700 font-medium">No Position Limits Per Bot</span>
             </div>
           </div>
 
@@ -180,25 +175,22 @@ export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
 
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
               <div className="text-[10px] uppercase font-bold text-slate-400">Fleet Win Rate</div>
-              <div className="text-lg font-black text-slate-900 font-mono mt-1">
+              <div className="text-lg font-black text-emerald-600 font-mono mt-1">
                 {winRate.toFixed(1)}%
               </div>
-              <div className="w-full bg-slate-200 h-1.5 rounded-full mt-1.5 overflow-hidden">
-                <div 
-                  className="bg-blue-600 h-full rounded-full transition-all"
-                  style={{ width: `${winRate}%` }}
-                ></div>
+              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                Stage 4-5: 93%+ Target
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 col-span-2 sm:col-span-1">
-              <div className="text-[10px] uppercase font-bold text-slate-400">Active Positions</div>
-              <div className="text-lg font-black text-emerald-600 font-mono mt-1 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                {activeTrades.length} Running
+              <div className="text-[10px] uppercase font-bold text-slate-400">Autonomous Lessons</div>
+              <div className="text-lg font-black text-purple-700 font-mono mt-1">
+                {totalMistakesEvolved} <span className="text-xs font-normal text-slate-400">Evolved</span>
               </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
-                Across 5 Bots
+              <div className="text-[10px] text-emerald-600 font-medium mt-0.5 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                Adaptive Heuristics
               </div>
             </div>
 
@@ -206,6 +198,7 @@ export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
 
         </div>
       </div>
+
     </div>
   );
 };

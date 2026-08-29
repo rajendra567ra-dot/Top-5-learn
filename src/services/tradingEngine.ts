@@ -1,7 +1,93 @@
-import { CryptoCoin, TradingBot, TradePosition, TradeDirection, BotLearningNote, TelegramLog } from '../types';
+import { 
+  CryptoCoin, 
+  TradingBot, 
+  TradePosition, 
+  TradeDirection, 
+  ConsensusStage, 
+  BotLearningNote, 
+  TelegramLog, 
+  StagePerformanceStats, 
+  SelfLearningHeuristic, 
+  MasterPortfolio 
+} from '../types';
 
-export function calculateTradeParameters(
-  bot: TradingBot,
+export const STAGE_CONFIGS: Record<ConsensusStage, {
+  label: string;
+  botsRequired: string;
+  marginPercent: number; // % of Master Dynamic Capital (Max 5.0% cap)
+  defaultLeverage: number;
+  minLeverage: number;
+  maxLeverage: number;
+  rrRatio: number;
+  accentColor: string;
+  description: string;
+}> = {
+  1: {
+    label: 'Stage 1 Entry',
+    botsRequired: 'Any 1 Bot (Primary Signal)',
+    marginPercent: 0.015, // 1.5% ($15 on $1,000)
+    defaultLeverage: 5,
+    minLeverage: 3,
+    maxLeverage: 6,
+    rrRatio: 1.5,
+    accentColor: '#3B82F6', // Blue
+    description: 'Initial signal discovery by any of the 5 specialist bots. Conservative entry testing the market.',
+  },
+  2: {
+    label: 'Stage 2 Entry',
+    botsRequired: 'Any 2 Bots Confirmed',
+    marginPercent: 0.025, // 2.5% ($25 on $1,000)
+    defaultLeverage: 8,
+    minLeverage: 6,
+    maxLeverage: 10,
+    rrRatio: 1.8,
+    accentColor: '#06B6D4', // Cyan
+    description: 'Secondary confirmation achieved by any 2 bot brains. Increased position size with moderate leverage.',
+  },
+  3: {
+    label: 'Stage 3 Entry',
+    botsRequired: 'Any 3 Bots Confirmed',
+    marginPercent: 0.035, // 3.5% ($35 on $1,000)
+    defaultLeverage: 14,
+    minLeverage: 10,
+    maxLeverage: 16,
+    rrRatio: 2.2,
+    accentColor: '#10B981', // Emerald
+    description: 'Majority consensus across any 3 bot brains. High conviction swing with escalated margin.',
+  },
+  4: {
+    label: 'Stage 4 Entry',
+    botsRequired: 'Any 4 Bots Confirmed',
+    marginPercent: 0.045, // 4.5% ($45 on $1,000)
+    defaultLeverage: 18,
+    minLeverage: 15,
+    maxLeverage: 22,
+    rrRatio: 2.5,
+    accentColor: '#8B5CF6', // Purple
+    description: 'Strong multi-timeframe & technical alignment across 4 bot brains. Near-unanimous fleet momentum.',
+  },
+  5: {
+    label: 'Stage 5 Entry',
+    botsRequired: 'All 5 Bots Confirmed (Max Consensus)',
+    marginPercent: 0.050, // 5.0% Max Cap ($50 on $1,000)
+    defaultLeverage: 25,
+    minLeverage: 20,
+    maxLeverage: 30,
+    rrRatio: 3.0,
+    accentColor: '#F59E0B', // Amber Gold
+    description: 'Unanimous 5-Bot maximum conviction. Highest allocation capped strictly at 5% of dynamic capital.',
+  },
+};
+
+/**
+ * Calculates trade parameters strictly based on the Consensus Stage and Master Portfolio ($1,000 base)
+ * Rule Enforced: Max 5% of Dynamic Capital per trade & Max Loss 3% of Capital per trade.
+ */
+export function calculateStagedTradeParameters(
+  masterBalance: number,
+  stage: ConsensusStage,
+  initiatorBot: TradingBot,
+  confirmingBots: TradingBot[],
   coin: CryptoCoin,
   direction: TradeDirection
 ): {
@@ -15,43 +101,41 @@ export function calculateTradeParameters(
   maxLossUsd: number;
   aiReasoning: string;
 } {
-  const botBalance = Number(bot.balance) || 100;
-  // 1. Dynamic 5% compounding margin
-  const margin = parseFloat((botBalance * 0.05).toFixed(2));
-  
-  // 2. Select strategy-specific leverage within bot range
-  let leverage = Math.floor(bot.minLeverage + (bot.maxLeverage - bot.minLeverage) * 0.6);
-  // Apex scalper and Titan vol scale leverage with volatility
-  const coinVol = Number(coin.volatility) || 5;
-  const coinChg = Number(coin.change24h) || 0;
-  const coinSent = Number(coin.sentimentScore) || 0;
+  const safeBalance = Math.max(100, masterBalance || 1000);
+  const stageConfig = STAGE_CONFIGS[stage] || STAGE_CONFIGS[1];
 
-  if (bot.id === 'bot-5') {
-    leverage = coinVol > 7 ? 10 : 15;
-  } else if (bot.id === 'bot-2') {
-    leverage = Math.abs(coinChg) > 8 ? 8 : 10;
-  } else if (bot.id === 'bot-3') {
-    leverage = Math.abs(coinSent) > 75 ? 8 : 5;
+  // Dynamic margin strictly capped at maximum 5% of dynamic capital per trade
+  const maxDynamicMargin = safeBalance * 0.05; // 5% ceiling
+  const rawMargin = Math.min(maxDynamicMargin, safeBalance * stageConfig.marginPercent);
+  const margin = parseFloat(Math.max(5.00, rawMargin).toFixed(2));
+
+  // Determine dynamic leverage based on stage, bot ranges, and coin volatility
+  let leverage = stageConfig.defaultLeverage;
+  const coinVol = Number(coin.volatility) || 5;
+
+  if (coinVol > 8) {
+    leverage = Math.max(stageConfig.minLeverage, leverage - 2);
+  } else if (coinVol < 3 && stage >= 3) {
+    leverage = Math.min(stageConfig.maxLeverage, leverage + 2);
   }
-  
+
   const positionSize = parseFloat((margin * leverage).toFixed(2));
-  
-  // Safely extract numeric entry price whether price is number or object
+
+  // Extract clean entry price
   let rawPrice = coin.price as any;
   if (typeof rawPrice === 'object' && rawPrice !== null && 'price' in rawPrice) {
     rawPrice = rawPrice.price;
   }
   const entryPrice = Number(rawPrice) > 0 ? Number(rawPrice) : 1;
 
-  // 3. Strict Max Loss = 3% of current capital
-  const maxLossUsd = parseFloat((botBalance * 0.03).toFixed(2));
+  // Max Loss strictly capped at maximum 3% of dynamic capital ($30 on $1,000)
+  const maxDynamicLossCeiling = safeBalance * 0.03; // Max 3% loss per trade
+  const proportionalLoss = margin * 0.60;
+  const maxLossUsd = parseFloat(Math.min(maxDynamicLossCeiling, Math.max(2.00, proportionalLoss)).toFixed(2));
 
-  // 4. Strict Min Take Profit >= $2.00 (targeting $2.10 - $3.20 based on R:R ratio)
-  const targetProfitUsd = parseFloat((Math.max(2.05, maxLossUsd * 1.35)).toFixed(2));
+  // Target profit with stage risk-reward ratio (minimum $2.00 profit)
+  const targetProfitUsd = parseFloat(Math.max(2.50, maxLossUsd * stageConfig.rrRatio).toFixed(2));
 
-  // Price distance calculations:
-  // Profit = positionSize * (priceDiff / entryPrice) => priceDiff = (targetProfitUsd / positionSize) * entryPrice
-  // Loss = positionSize * (priceDiff / entryPrice) => priceDiff = (maxLossUsd / positionSize) * entryPrice
   const profitPriceDelta = (targetProfitUsd / Math.max(0.01, positionSize)) * entryPrice;
   const lossPriceDelta = (maxLossUsd / Math.max(0.01, positionSize)) * entryPrice;
 
@@ -74,8 +158,7 @@ export function calculateTradeParameters(
     stopLossPrice = formatPrecision(entryPrice + lossPriceDelta);
   }
 
-  // Generate strategy AI rationale
-  const aiReasoning = generateAIReasoning(bot, coin, direction, leverage);
+  const aiReasoning = generateStagedAIReasoning(stage, initiatorBot, confirmingBots, coin, direction, leverage);
 
   return {
     margin,
@@ -90,158 +173,293 @@ export function calculateTradeParameters(
   };
 }
 
-function generateAIReasoning(bot: TradingBot, coin: CryptoCoin, direction: TradeDirection, leverage: number): string {
-  const symbol = coin.symbol;
-  const trend = coin.trend;
-  const rsi = coin.rsi;
-  const sentiment = coin.sentimentScore;
 
-  switch (bot.id) {
-    case 'bot-1':
-      return direction === 'LONG'
-        ? `Vortex-4H Macro Alignment: $${symbol} holding firmly above 200 EMA with 9/21/50 EMA Ribbon bullish expansion. ADX at ${Math.floor(26 + Math.random() * 15)} indicates structural trend velocity.`
-        : `Vortex-4H Structural Breakdown: $${symbol} lost 4H 200 EMA support with Ribbon turning bearish. Entering short on breakdown retest.`;
-    case 'bot-2':
-      return `Titan Volatility Breakout (${leverage}x): 15M Bollinger Bands expansion following Keltner Channel squeeze. Volume delta surged +${Math.floor(180 + Math.random() * 140)}% confirming breakout momentum.`;
-    case 'bot-3':
-      return `Neural ML Sentiment Engine: Real-time Gemini NLP parsed social velocity & crypto narrative score for $${symbol} at ${sentiment > 0 ? '+' : ''}${sentiment}/100. High crowd momentum divergence detected.`;
-    case 'bot-4':
-      return direction === 'LONG'
-        ? `Quant Mean Reversion: Extreme oversold condition on $${symbol} with 45M RSI at ${rsi} (<28) and price dislocated -2.6σ below VWAP. High statistical snapback probability.`
-        : `Quant Mean Reversion Short: Severe overbought exhaustion on $${symbol} with RSI at ${rsi} (>72) and +2.8σ VWAP deviation with funding rate premium.`;
-    case 'bot-5':
-      return `Apex Scalper (${leverage}x): Rapid 3-minute liquidity sweep below equal price levels on $${symbol}. Instant aggressive delta reclamation and orderbook bid wall absorption.`;
+export function generateStagedAIReasoning(
+  stage: ConsensusStage,
+  initiatorBot: TradingBot,
+  confirmingBots: TradingBot[],
+  coin: CryptoCoin,
+  direction: TradeDirection,
+  leverage: number
+): string {
+  const symbol = coin.symbol;
+  const botNames = confirmingBots.map(b => b.name).join(', ');
+
+  switch (stage) {
+    case 1:
+      return `Stage 1 Discovery (${initiatorBot.name} ➔ ${direction} ${leverage}x): Primary signal triggered on $${symbol}. Monitoring for secondary bot technical validation before scaling margin.`;
+    case 2:
+      return `Stage 2 Consensus (${confirmingBots.length} Bots: ${botNames}): 2-Bot confirmation active on $${symbol} ${direction}. Trend & volatility alignment validated.`;
+    case 3:
+      return `Stage 3 Majority Consensus (${confirmingBots.length} Bots: ${botNames}): 3 Specialist engines agree on $${symbol} ${direction}. Sentiment + Technical + Volatility confluence.`;
+    case 4:
+      return `Stage 4 High-Conviction Fleet Alignment (${botNames}): 4 Specialist brains confirm strong directional momentum on $${symbol} ${direction} (${leverage}x).`;
+    case 5:
+      return `Stage 5 Maximum Fleet Consensus (ALL 5 BOTS UNANIMOUS: ${botNames}): Unanimous fleet conviction on $${symbol} ${direction} with maximum dynamic allocation (${leverage}x).`;
     default:
-      return `Autonomous execution by ${bot.name} on $${symbol} with ${leverage}x leverage. Technical & ML alignment confirmed.`;
+      return `Autonomous Staged Execution on $${symbol} ${direction} with ${confirmingBots.length} confirming bots.`;
   }
 }
 
-// Post-mortem mistake generator when SL hits
-export function analyzeTradeMistake(
-  bot: TradingBot,
-  trade: TradePosition
+/**
+ * Computes performance analytics for each of the 5 consensus stages
+ */
+export function computeStagePerformanceStats(auditLogs: TradePosition[]): StagePerformanceStats[] {
+  const stages: ConsensusStage[] = [1, 2, 3, 4, 5];
+
+  return stages.map(stage => {
+    const stageTrades = auditLogs.filter(t => (t.stageAtClose || t.stage) === stage);
+    const totalTrades = stageTrades.length;
+    const wins = stageTrades.filter(t => t.status === 'CLOSED_TP' || (t.realizedPnL || 0) > 0).length;
+    const losses = stageTrades.filter(t => t.status === 'CLOSED_SL' || (t.realizedPnL || 0) < 0).length;
+    const winRate = totalTrades > 0 ? parseFloat(((wins / totalTrades) * 100).toFixed(1)) : 0;
+
+    const totalRealizedPnL = parseFloat(stageTrades.reduce((sum, t) => sum + (t.realizedPnL || 0), 0).toFixed(2));
+    
+    const totalRoi = stageTrades.reduce((sum, t) => sum + (t.realizedPnLPercent || 0), 0);
+    const avgRoiPercent = totalTrades > 0 ? parseFloat((totalRoi / totalTrades).toFixed(1)) : 0;
+
+    const totalLev = stageTrades.reduce((sum, t) => sum + t.leverage, 0);
+    const avgLeverage = totalTrades > 0 ? Math.round(totalLev / totalTrades) : STAGE_CONFIGS[stage].defaultLeverage;
+
+    const grossProfit = stageTrades.filter(t => (t.realizedPnL || 0) > 0).reduce((sum, t) => sum + (t.realizedPnL || 0), 0);
+    const grossLoss = Math.abs(stageTrades.filter(t => (t.realizedPnL || 0) < 0).reduce((sum, t) => sum + (t.realizedPnL || 0), 0));
+    const profitFactor = grossLoss > 0 ? parseFloat((grossProfit / grossLoss).toFixed(2)) : (grossProfit > 0 ? 9.99 : 0);
+
+    const config = STAGE_CONFIGS[stage];
+
+    return {
+      stage,
+      stageLabel: config.label,
+      botsRequiredText: config.botsRequired,
+      totalTrades,
+      wins,
+      losses,
+      winRate,
+      totalRealizedPnL,
+      avgRoiPercent,
+      avgLeverage,
+      profitFactor,
+      description: config.description,
+      accentColor: config.accentColor,
+    };
+  });
+}
+
+/**
+ * Autonomous Learning & Evolutionary Heuristic Generator
+ */
+export function analyzeTradeMistakeAndEvolve(
+  trade: TradePosition,
+  bots: TradingBot[],
+  currentGeneration: number
 ): {
-  mistakeIdentified: string;
-  learnedLesson: string;
-  parameterAdjustment: string;
+  learningNote: BotLearningNote;
+  heuristicUpdate: SelfLearningHeuristic;
+  updatedBots: TradingBot[];
 } {
   const symbol = trade.symbol.split('/')[0];
   const direction = trade.direction;
+  const stage = trade.stage;
 
   const mistakesPool = [
     {
-      mistake: `Premature ${direction.toLowerCase()} entry on $${symbol} during higher-timeframe choppy macro consolidation without volume confirmation.`,
-      lesson: `Filter out setups when 1H ATR is below 20-period moving average to prevent getting chopped in consolidation ranges.`,
-      adjustment: `Raised required volume multiplier threshold by +15% and added a 15-minute consolidation filter.`
+      category: 'CONSENSUS_FILTER' as const,
+      mistake: `Stage ${stage} ${direction} entry on $${symbol} lacked higher timeframe multi-candle confirmation.`,
+      lesson: `Enforce a 2-candle body close confirmation requirement on 15M/1H before allowing Stage 1/2 trades near key S/R.`,
+      adjustment: `Consensus Filter Tightened: Stage 1 entry threshold raised from 65 to 72 confidence points.`,
+      paramKey: 'STAGE_1_CONFIRMATION_THRESHOLD',
+      prevVal: '65 pts',
+      nextVal: '72 pts',
+      adaptationType: 'TIGHTENED' as const,
     },
     {
-      mistake: `Entered ${direction.toLowerCase()} into a false breakout liquidity trap on $${symbol} right before institutional sweep.`,
-      lesson: `Require full candle body close above resistance/below support rather than trading on single-wick spikes.`,
-      adjustment: `Enforced 2-candle confirmation rule and clamped max leverage to ${Math.max(bot.minLeverage, trade.leverage - 2)}x for high-volatility tokens.`
+      category: 'VOLATILITY_CLAMP' as const,
+      mistake: `Caught in low-liquidity volatility whip-saw on $${symbol} during market maker liquidity sweep.`,
+      lesson: `Clamping max leverage dynamically on tokens with 24h volume under $100M or bid-ask spread > 0.35%.`,
+      adjustment: `Dynamic Spread Clamp: Leverage reduced by 30% for tokens with elevated slippage index.`,
+      paramKey: 'SPREAD_LEVERAGE_CLAMP',
+      prevVal: '1.0x (Standard)',
+      nextVal: '0.70x (Tightened)',
+      adaptationType: 'HARDENED' as const,
     },
     {
-      mistake: `Ignored macro Bitcoin correlation drag while opening individual altcoin trade on $${symbol}.`,
-      lesson: `Altcoins have high beta to BTC moves; require BTC 15M trend alignment before opening counter-directional positions.`,
-      adjustment: `Added global BTC 15M trend filter gate before signal authorization.`
+      category: 'STOP_LOSS_SPACING' as const,
+      mistake: `Stop-loss on $${symbol} was too tightly clustered around local wick lows rather than structure support.`,
+      lesson: `Widen ATR stop buffer by +0.35x ATR to avoid getting hunted during normal market noise.`,
+      adjustment: `Dynamic ATR Buffer expanded from 1.2x to 1.55x ATR for high-beta tokens.`,
+      paramKey: 'DYNAMIC_ATR_STOP_BUFFER',
+      prevVal: '1.20x ATR',
+      nextVal: '1.55x ATR',
+      adaptationType: 'EXPANDED' as const,
     },
     {
-      mistake: `Spread slippage and orderbook thinness on $${symbol} widened stop-loss execution boundary.`,
-      lesson: `Avoid high leverage on lower-liquidity tokens with bid-ask spread greater than 0.35%.`,
-      adjustment: `Added dynamic spread filter: Automatically reduces leverage by 40% when 24h volume is under $50M.`
-    }
+      category: 'SENTIMENT_WEIGHT' as const,
+      mistake: `Over-weighted social sentiment velocity during macro Bitcoin trend dislocation.`,
+      lesson: `Mandate Bitcoin 15M trend alignment check before allowing Stage 3+ aggressive sentiment entries.`,
+      adjustment: `BTC Macro Trend Gate enabled: Multi-bot consensus requires BTC direction correlation >= 0.40.`,
+      paramKey: 'BTC_CORRELATION_GATE',
+      prevVal: 'Disabled (0.00)',
+      nextVal: 'Enabled (0.40 Min)',
+      adaptationType: 'OPTIMIZED' as const,
+    },
   ];
 
   const selected = mistakesPool[Math.floor(Math.random() * mistakesPool.length)];
-  return {
+
+  const learningNote: BotLearningNote = {
+    id: `learn-${Date.now()}`,
+    timestamp: Date.now(),
+    tradeId: trade.id,
+    symbol: symbol,
+    direction: trade.direction,
+    stage: trade.stage,
+    lossAmount: Math.abs(trade.realizedPnL || trade.maxLossUsd),
     mistakeIdentified: selected.mistake,
     learnedLesson: selected.lesson,
-    parameterAdjustment: selected.adjustment
+    parameterAdjustment: selected.adjustment,
+    confidenceScore: Math.floor(90 + Math.random() * 8),
+    evolutionGeneration: currentGeneration + 1,
+  };
+
+  const heuristicUpdate: SelfLearningHeuristic = {
+    id: `heur-${Date.now()}`,
+    key: selected.paramKey,
+    name: selected.paramKey.replace(/_/g, ' '),
+    category: selected.category,
+    currentValue: selected.nextVal,
+    previousValue: selected.prevVal,
+    adaptationType: selected.adaptationType,
+    rationale: selected.lesson,
+    effectivenessScore: Math.floor(92 + Math.random() * 7),
+    timestamp: Date.now(),
+  };
+
+  // Adjust bot strategy weights and confidence modifiers dynamically
+  const updatedBots = bots.map(b => {
+    if (trade.confirmingBotIds.includes(b.id)) {
+      const isLoss = (trade.realizedPnL || 0) < 0;
+      return {
+        ...b,
+        mistakesCount: isLoss ? b.mistakesCount + 1 : b.mistakesCount,
+        lossTradesAssisted: isLoss ? b.lossTradesAssisted + 1 : b.lossTradesAssisted,
+        winTradesAssisted: !isLoss ? b.winTradesAssisted + 1 : b.winTradesAssisted,
+        strategyWeight: isLoss 
+          ? parseFloat(Math.max(0.75, b.strategyWeight - 0.02).toFixed(2))
+          : parseFloat(Math.min(1.85, b.strategyWeight + 0.03).toFixed(2)),
+        adaptiveConfidenceModifier: isLoss
+          ? parseFloat(Math.max(0.85, b.adaptiveConfidenceModifier - 0.03).toFixed(2))
+          : parseFloat(Math.min(1.40, b.adaptiveConfidenceModifier + 0.04).toFixed(2)),
+        learningNotes: isLoss ? [learningNote, ...b.learningNotes.slice(0, 19)] : b.learningNotes,
+      };
+    }
+    return b;
+  });
+
+  return {
+    learningNote,
+    heuristicUpdate,
+    updatedBots,
   };
 }
 
-// Telegram message formatters
-export function formatTelegramTradeOpen(trade: TradePosition, bot: TradingBot): string {
-  return `🚀 *[TRADE OPENED - ${bot.name}]*
+// Telegram Message Formatters
+export function formatTelegramStageTradeOpen(trade: TradePosition): string {
+  const stageConfig = STAGE_CONFIGS[trade.stage] || STAGE_CONFIGS[1];
+  return `🚀 *[STAGE ${trade.stage} TRADE OPENED]*
 ━━━━━━━━━━━━━━━━━━━━
 • *Pair*: \`${trade.symbol}\`
 • *Side*: *${trade.direction}* (${trade.leverage}x Leverage)
-• *Entry Price*: \`$${trade.entryPrice}\`
-• *Margin*: \`$${trade.margin.toFixed(2)}\` (5% dynamic capital)
-• *Position Size*: \`$${trade.positionSize.toFixed(2)}\`
+• *Consensus Stage*: *${stageConfig.label}* (${trade.confirmingBotNames.length} Bots Agreed)
+• *Confirming Bots*: \`${trade.confirmingBotNames.join(', ')}\`
 ━━━━━━━━━━━━━━━━━━━━
-🎯 *Take Profit*: \`$${trade.takeProfitPrice}\` (+ $${trade.targetProfitUsd.toFixed(2)} / >$2.00 Net)
-🛑 *Stop Loss*: \`$${trade.stopLossPrice}\` (- $${trade.maxLossUsd.toFixed(2)} / 3% max risk)
+• *Entry Price*: \`$${trade.entryPrice}\`
+• *Margin (Master $1K)*: \`$${trade.margin.toFixed(2)}\`
+• *Position Size*: \`$${trade.positionSize.toFixed(2)}\`
+🎯 *Take Profit*: \`$${trade.takeProfitPrice}\` (+ $${trade.targetProfitUsd.toFixed(2)})
+🛑 *Stop Loss*: \`$${trade.stopLossPrice}\` (- $${trade.maxLossUsd.toFixed(2)})
 ━━━━━━━━━━━━━━━━━━━━
 🧠 *AI Strategy Rationale*:
 _${trade.aiReasoning}_
 
-⚡ *24/7 Autonomous Fleet Engine Active*`;
+⚡ *Autonomous Staged Fleet Engine Active*`;
 }
 
-export function formatTelegramTPHit(trade: TradePosition, bot: TradingBot): string {
+export function formatTelegramStageUpgrade(trade: TradePosition, addedBotName: string): string {
+  return `⚡ *[TRADE STAGE UPGRADED ➔ STAGE ${trade.stage}]*
+━━━━━━━━━━━━━━━━━━━━
+• *Pair*: \`${trade.symbol}\` (${trade.direction})
+• *New Consensus Level*: *Stage ${trade.stage} (${trade.confirmingBotNames.length} Bots)*
+• *Confirmed By*: \`${addedBotName}\`
+• *Upgraded Margin*: \`$${trade.margin.toFixed(2)}\` (Leverage: ${trade.leverage}x)
+• *New Position Size*: \`$${trade.positionSize.toFixed(2)}\`
+• *Current Mark Price*: \`$${trade.currentPrice}\`
+━━━━━━━━━━━━━━━━━━━━
+📈 *Multi-Bot Consensus Escalated!*`;
+}
+
+export function formatTelegramTPHit(trade: TradePosition, masterPortfolio: MasterPortfolio): string {
   const pnl = trade.realizedPnL || trade.targetProfitUsd;
   const pnlPct = trade.realizedPnLPercent || ((pnl / trade.margin) * 100);
-  return `🎯 *[TAKE-PROFIT HIT - ${bot.name}]*
+  return `🎯 *[TAKE-PROFIT HIT - STAGE ${trade.stage}]*
 ━━━━━━━━━━━━━━━━━━━━
 • *Pair*: \`${trade.symbol}\` (${trade.direction} ${trade.leverage}x)
+• *Stage*: *Stage ${trade.stage} (${trade.confirmingBotNames.length} Bots)*
 • *Entry*: \`$${trade.entryPrice}\` ➔ *Exit*: \`$${trade.closePrice || trade.takeProfitPrice}\`
 • *Realized Profit*: *+ $${pnl.toFixed(2)} USDT* (+${pnlPct.toFixed(2)}% ROI)
-• *Target Met*: Dynamic $2.00+ Net Win Rule Satisfied ✅
 ━━━━━━━━━━━━━━━━━━━━
-💰 *${bot.name} New Balance*: \`$${bot.balance.toFixed(2)} USDT\`
-📊 *Bot Record*: \`${bot.winTrades}W / ${bot.lossTrades}L\` (${((bot.winTrades / (bot.winTrades + bot.lossTrades)) * 100).toFixed(1)}% Win Rate)
+💰 *Master Portfolio Balance*: \`$${masterPortfolio.currentBalance.toFixed(2)} USDT\`
+📊 *Fleet Record*: \`${masterPortfolio.totalWins}W / ${masterPortfolio.totalLosses}L\` (${masterPortfolio.fleetWinRate.toFixed(1)}% Win Rate)
 
-🚀 *Compounding next trade at 5% dynamic capital.*`;
+🚀 *Self-learning system reinforced successful patterns.*`;
 }
 
-export function formatTelegramSLHit(trade: TradePosition, bot: TradingBot, learning: BotLearningNote): string {
+export function formatTelegramSLHit(
+  trade: TradePosition, 
+  masterPortfolio: MasterPortfolio, 
+  learning: BotLearningNote
+): string {
   const pnl = Math.abs(trade.realizedPnL || trade.maxLossUsd);
-  return `🛑 *[STOP-LOSS HIT - AI LEARNING TRIGGERED]*
+  return `🛑 *[STOP-LOSS HIT - AI SELF-LEARNING TRIGGERED]*
 ━━━━━━━━━━━━━━━━━━━━
-• *Bot*: *${bot.name}*
-• *Pair*: \`${trade.symbol}\` (${trade.direction} ${trade.leverage}x)
-• *Realized Loss*: *- $${pnl.toFixed(2)} USDT* (Hard Capped at 3% Capital)
-• *New Balance*: \`$${bot.balance.toFixed(2)} USDT\`
+• *Pair*: \`${trade.symbol}\` (Stage ${trade.stage} ${trade.direction} ${trade.leverage}x)
+• *Realized Loss*: *- $${pnl.toFixed(2)} USDT* (Master Capital Guarded)
+• *Master Portfolio Balance*: \`$${masterPortfolio.currentBalance.toFixed(2)} USDT\`
 ━━━━━━━━━━━━━━━━━━━━
-🧠 *AI BRAIN POST-MORTEM & ADAPTIVE LEARNING*:
+🧠 *AUTONOMOUS BRAIN POST-MORTEM & ADAPTIVE EVOLUTION*:
 ⚠️ *Mistake*: _${learning.mistakeIdentified}_
 💡 *Lesson*: _${learning.learnedLesson}_
-⚙️ *Rule Adjusted*: \`${learning.parameterAdjustment}\`
+⚙️ *Rule Auto-Tuned*: \`${learning.parameterAdjustment}\`
 
-📈 *Next trades updated with new neural heuristics!*`;
+📈 *Gen #${learning.evolutionGeneration || masterPortfolio.evolutionGeneration}: Parameters auto-adjusted across all 5 bot brains!*`;
 }
 
-export function formatTelegramFleetSummary(bots: TradingBot[], activeTrades: TradePosition[], initialBase: number = 500): string {
-  const totalBalance = bots.reduce((sum, b) => sum + b.balance, 0);
-  const totalNetPnL = totalBalance - initialBase;
-  const netROI = (totalNetPnL / initialBase) * 100;
-  const totalWins = bots.reduce((sum, b) => sum + b.winTrades, 0);
-  const totalLosses = bots.reduce((sum, b) => sum + b.lossTrades, 0);
-  const totalClosed = totalWins + totalLosses;
-  const winRate = totalClosed > 0 ? (totalWins / totalClosed) * 100 : 0;
+export function formatTelegramFleetSummary(
+  masterPortfolio: MasterPortfolio, 
+  activeTrades: TradePosition[], 
+  bots: TradingBot[]
+): string {
+  const totalNet = masterPortfolio.currentBalance - masterPortfolio.initialBase;
+  const sign = totalNet >= 0 ? '+' : '';
 
-  const botLines = bots.map((b) => {
-    const pnl = b.balance - b.initialBalance;
-    const sign = pnl >= 0 ? '+' : '';
-    const wr = (b.winTrades + b.lossTrades) > 0 ? ((b.winTrades / (b.winTrades + b.lossTrades)) * 100).toFixed(0) : '0';
-    return `• *${b.name}*: \`$${b.balance.toFixed(2)}\` (${sign}$${pnl.toFixed(2)}) | ${b.winTrades}W/${b.lossTrades}L (${wr}%)`;
-  }).join('\n');
+  const stageCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  activeTrades.forEach(t => {
+    stageCounts[t.stage] = (stageCounts[t.stage] || 0) + 1;
+  });
 
-  return `📊 *[24/7 AUTONOMOUS FLEET HOURLY REPORT]*
+  return `📊 *[24/7 AUTONOMOUS STAGED FLEET REPORT]*
 ━━━━━━━━━━━━━━━━━━━━
-💰 *Combined Fleet Portfolio*: *$${totalBalance.toFixed(2)} USDT*
-📈 *Total Net ROI*: *${totalNetPnL >= 0 ? '+' : ''}${netROI.toFixed(2)}%* (${totalNetPnL >= 0 ? '+' : ''}$${totalNetPnL.toFixed(2)})
-🏆 *Fleet Win Rate*: *${winRate.toFixed(1)}%* (${totalWins}W / ${totalLosses}L on ${totalClosed} trades)
-⚡ *Active Running Positions*: *${activeTrades.length} Trades*
+💰 *Master Fleet Portfolio ($1,000 Base)*: *$${masterPortfolio.currentBalance.toFixed(2)} USDT*
+📈 *Total Net PnL*: *${sign}$${totalNet.toFixed(2)} (${sign}${masterPortfolio.netROI.toFixed(2)}%)*
+🏆 *Fleet Win Rate*: *${masterPortfolio.fleetWinRate.toFixed(1)}%* (${masterPortfolio.totalWins}W / ${masterPortfolio.totalLosses}L on ${masterPortfolio.totalTradesExecuted} trades)
+⚡ *Active Running Trades*: *${activeTrades.length} Positions*
+  • Stage 1 (1 Bot): ${stageCounts[1]}
+  • Stage 2 (2 Bots): ${stageCounts[2]}
+  • Stage 3 (3 Bots): ${stageCounts[3]}
+  • Stage 4 (4 Bots): ${stageCounts[4]}
+  • Stage 5 (5 Bots Max): ${stageCounts[5]}
 ━━━━━━━━━━━━━━━━━━━━
-🤖 *SPECIALIST BOTS BREAKDOWN ($100 Base Each)*:
-${botLines}
-━━━━━━━━━━━━━━━━━━━━
-⚙️ *Dynamic Risk Enforced*:
-• Dynamic Compounding: 5% capital per trade
-• Strict Hard Stop-Loss: 3% max capital risk
-• Take-Profit Target: Minimum $2.00+ profit rule
-• Continuous Brain AI learning from past trades
-
+🧠 *Self-Learning Evolution*: Gen #${masterPortfolio.evolutionGeneration} (${masterPortfolio.selfLearningAdaptationsCount} Heuristics Evolved)
 ⏱️ *Fleet Uptime: 24x7 Continuous Execution*`;
 }
+

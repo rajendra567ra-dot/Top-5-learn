@@ -1,12 +1,24 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { TradingBot, TradePosition, CryptoCoin, TelegramConfig, TelegramLog, TradeDirection, BotLearningNote } from './types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  TradingBot, 
+  TradePosition, 
+  CryptoCoin, 
+  TelegramConfig, 
+  TelegramLog, 
+  TradeDirection, 
+  BotLearningNote,
+  ConsensusStage,
+  MasterPortfolio
+} from './types';
 import { generateTop500Universe } from './data/topCoins';
 import { INITIAL_BOTS } from './data/initialBots';
 import { INITIAL_ACTIVE_TRADES, INITIAL_AUDIT_LOGS } from './data/initialTrades';
 import { 
-  calculateTradeParameters, 
-  analyzeTradeMistake, 
-  formatTelegramTradeOpen, 
+  STAGE_CONFIGS,
+  calculateStagedTradeParameters, 
+  analyzeTradeMistakeAndEvolve, 
+  formatTelegramStageTradeOpen, 
+  formatTelegramStageUpgrade,
   formatTelegramTPHit, 
   formatTelegramSLHit, 
   formatTelegramFleetSummary 
@@ -14,6 +26,7 @@ import {
 
 import { Header } from './components/Header';
 import { FleetOverviewCard } from './components/FleetOverviewCard';
+import { StagePerformanceView } from './components/StagePerformanceView';
 import { BotsDashboard } from './components/BotsDashboard';
 import { ActiveTradesView } from './components/ActiveTradesView';
 import { MarketScannerView } from './components/MarketScannerView';
@@ -22,7 +35,6 @@ import { AuditLogsView } from './components/AuditLogsView';
 import { TelegramHubView } from './components/TelegramHubView';
 import { TelegramSetupModal } from './components/TelegramSetupModal';
 import { ResetConfirmModal } from './components/ResetConfirmModal';
-import { ExportProjectModal } from './components/ExportProjectModal';
 
 interface MarketStats {
   totalMarketCap: number;
@@ -33,21 +45,65 @@ interface MarketStats {
   liveFeedStatus: string;
 }
 
+const deduplicateById = <T extends { id: string }>(items: T[]): T[] => {
+  const seen = new Set<string>();
+  return items.filter(item => {
+    if (!item || !item.id || seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+};
+
+const INITIAL_MASTER_PORTFOLIO: MasterPortfolio = {
+  initialBase: 1000.00,
+  currentBalance: 1000.00, // Starts at clean $1,000 baseline
+  totalRealizedPnL: 0.00,
+  netROI: 0.00,
+  totalWins: 0,
+  totalLosses: 0,
+  totalTradesExecuted: 0,
+  fleetWinRate: 0.0,
+  evolutionGeneration: 1,
+  selfLearningAdaptationsCount: 0,
+  activeStagedTradesCount: 0,
+};
+
 export const App: React.FC = () => {
-  // 1. Core State
+  // 1. Core State - Starting from zero baseline
   const [bots, setBots] = useState<TradingBot[]>(() => {
-    const saved = localStorage.getItem('ai_fleet_bots_v1');
+    const saved = localStorage.getItem('ai_fleet_bots_v3');
     return saved ? JSON.parse(saved) : INITIAL_BOTS;
   });
 
+  const [masterPortfolio, setMasterPortfolio] = useState<MasterPortfolio>(() => {
+    const saved = localStorage.getItem('ai_fleet_master_portfolio_v3');
+    return saved ? JSON.parse(saved) : INITIAL_MASTER_PORTFOLIO;
+  });
+
   const [activeTrades, setActiveTrades] = useState<TradePosition[]>(() => {
-    const saved = localStorage.getItem('ai_fleet_active_trades_v1');
-    return saved ? JSON.parse(saved) : INITIAL_ACTIVE_TRADES;
+    const saved = localStorage.getItem('ai_fleet_active_trades_v3');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return deduplicateById(parsed);
+      } catch (e) {
+        console.warn('Failed to parse saved active trades:', e);
+      }
+    }
+    return deduplicateById(INITIAL_ACTIVE_TRADES);
   });
 
   const [auditLogs, setAuditLogs] = useState<TradePosition[]>(() => {
-    const saved = localStorage.getItem('ai_fleet_audit_logs_v1');
-    return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
+    const saved = localStorage.getItem('ai_fleet_audit_logs_v3');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return deduplicateById(parsed);
+      } catch (e) {
+        console.warn('Failed to parse saved audit logs:', e);
+      }
+    }
+    return deduplicateById(INITIAL_AUDIT_LOGS);
   });
 
   const [coins, setCoins] = useState<CryptoCoin[]>(() => generateTop500Universe());
@@ -62,7 +118,7 @@ export const App: React.FC = () => {
   const [liveFeedActive, setLiveFeedActive] = useState<boolean>(true);
 
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig>(() => {
-    const saved = localStorage.getItem('ai_fleet_tg_config_v1');
+    const saved = localStorage.getItem('ai_fleet_tg_config_v3');
     return saved ? JSON.parse(saved) : {
       botToken: '',
       chatId: '',
@@ -76,25 +132,25 @@ export const App: React.FC = () => {
   });
 
   const [telegramLogs, setTelegramLogs] = useState<TelegramLog[]>(() => {
-    const saved = localStorage.getItem('ai_fleet_tg_logs_v1');
+    const saved = localStorage.getItem('ai_fleet_tg_logs_v3');
     if (saved) return JSON.parse(saved);
     return [
       {
-        id: 'tg-init-1',
-        timestamp: Date.now() - 7200000,
-        type: 'HOURLY_SUMMARY',
+        id: 'tg-init-start',
+        timestamp: Date.now(),
+        type: 'SYSTEM',
         target: '@CryptoFleetBot',
-        message: `📊 *[24/7 AUTONOMOUS FLEET HOURLY REPORT]*\n• Combined Balance: $539.50 USDT (+7.90% Net ROI)\n• Fleet Win Rate: 84.6% (22W / 4L)\n• Active Positions: 5 Running Trades\n• 5 Specialist Bots ($100 Base Each) Online`,
-        status: 'SIMULATED',
+        message: `⚡ *[24/7 AUTONOMOUS STAGED FLEET ONLINE]*\n• Master Capital: $1,000.00 USDT\n• Risk Caps: Max 5% dynamic margin, Max 3% loss per trade\n• Consensus Engine: 5 Specialist Bot Brains Active\n• Any-Bot Signal Initiation: Enabled (Vortex 4H, Titan Vol, Neural Sent, Quant MR, Apex Scalper)\n• Real-Time Telegram Updates: Enabled for Trade Open, SL Hit, TP Hit & Periodic Summaries`,
+        status: 'DISPATCHED',
       }
     ];
   });
 
-  // UI state
-  const [activeTab, setActiveTab] = useState<string>('bots');
+  // UI state - Default to Stage Performance View
+  const [activeTab, setActiveTab] = useState<string>('stages');
   const [is247Running, setIs247Running] = useState<boolean>(true);
   const [uptimeSeconds, setUptimeSeconds] = useState<number>(() => {
-    const saved = localStorage.getItem('ai_fleet_uptime_seconds_v1');
+    const saved = localStorage.getItem('ai_fleet_uptime_seconds_v3');
     return saved !== null ? parseInt(saved, 10) || 0 : 0;
   });
   const [nextSummarySeconds, setNextSummarySeconds] = useState<number>(3600);
@@ -104,30 +160,34 @@ export const App: React.FC = () => {
   // Modals
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Persistence effects
   useEffect(() => {
-    localStorage.setItem('ai_fleet_uptime_seconds_v1', uptimeSeconds.toString());
+    localStorage.setItem('ai_fleet_uptime_seconds_v3', uptimeSeconds.toString());
   }, [uptimeSeconds]);
+
   useEffect(() => {
-    localStorage.setItem('ai_fleet_bots_v1', JSON.stringify(bots));
+    localStorage.setItem('ai_fleet_bots_v3', JSON.stringify(bots));
   }, [bots]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_active_trades_v1', JSON.stringify(activeTrades));
+    localStorage.setItem('ai_fleet_master_portfolio_v3', JSON.stringify(masterPortfolio));
+  }, [masterPortfolio]);
+
+  useEffect(() => {
+    localStorage.setItem('ai_fleet_active_trades_v3', JSON.stringify(activeTrades));
   }, [activeTrades]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_audit_logs_v1', JSON.stringify(auditLogs));
+    localStorage.setItem('ai_fleet_audit_logs_v3', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_tg_config_v1', JSON.stringify(telegramConfig));
+    localStorage.setItem('ai_fleet_tg_config_v3', JSON.stringify(telegramConfig));
   }, [telegramConfig]);
 
   useEffect(() => {
-    localStorage.setItem('ai_fleet_tg_logs_v1', JSON.stringify(telegramLogs));
+    localStorage.setItem('ai_fleet_tg_logs_v3', JSON.stringify(telegramLogs));
   }, [telegramLogs]);
 
   // Dispatch message helper
@@ -182,7 +242,7 @@ export const App: React.FC = () => {
       setNextSummarySeconds(prev => {
         if (prev <= 1) {
           // Trigger automated hourly report
-          const summaryText = formatTelegramFleetSummary(bots, activeTrades);
+          const summaryText = formatTelegramFleetSummary(masterPortfolio, activeTrades, bots);
           if (telegramConfig.notifyHourlySummary) {
             sendTelegramMessage(summaryText, 'HOURLY_SUMMARY');
           }
@@ -193,7 +253,7 @@ export const App: React.FC = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [is247Running, bots, activeTrades, telegramConfig, sendTelegramMessage]);
+  }, [is247Running, masterPortfolio, activeTrades, bots, telegramConfig, sendTelegramMessage]);
 
   // 3. Close Trade Action (Manual or Triggered)
   const handleCloseTrade = useCallback((tradeId: string) => {
@@ -204,25 +264,47 @@ export const App: React.FC = () => {
       const pnl = trade.unrealizedPnL;
       const isWin = pnl >= 0;
 
-      // Update bot balance
-      setBots(botList => botList.map(b => {
-        if (b.id === trade.botId) {
-          const newBal = parseFloat(Math.max(10, b.balance + pnl).toFixed(2));
+      // Update Master Portfolio balance & W/L
+      setMasterPortfolio(mp => {
+        const newBal = parseFloat(Math.max(100, mp.currentBalance + pnl).toFixed(2));
+        const totalNet = parseFloat((newBal - mp.initialBase).toFixed(2));
+        const netROI = parseFloat(((totalNet / mp.initialBase) * 100).toFixed(2));
+        const wins = isWin ? mp.totalWins + 1 : mp.totalWins;
+        const losses = !isWin ? mp.totalLosses + 1 : mp.totalLosses;
+        const closed = wins + losses;
+        const winRate = closed > 0 ? parseFloat(((wins / closed) * 100).toFixed(1)) : 0;
+
+        return {
+          ...mp,
+          currentBalance: newBal,
+          totalRealizedPnL: totalNet,
+          netROI,
+          totalWins: wins,
+          totalLosses: losses,
+          totalTradesExecuted: mp.totalTradesExecuted + 1,
+          fleetWinRate: winRate,
+          activeStagedTradesCount: Math.max(0, prev.length - 1),
+        };
+      });
+
+      // Update confirming bots statistics
+      setBots(bList => bList.map(b => {
+        if (trade.confirmingBotIds.includes(b.id)) {
           return {
             ...b,
-            balance: newBal,
-            winTrades: isWin ? b.winTrades + 1 : b.winTrades,
-            lossTrades: !isWin ? b.lossTrades + 1 : b.lossTrades,
-            totalPnL: parseFloat((b.totalPnL + pnl).toFixed(2)),
+            winTradesAssisted: isWin ? b.winTradesAssisted + 1 : b.winTradesAssisted,
+            lossTradesAssisted: !isWin ? b.lossTradesAssisted + 1 : b.lossTradesAssisted,
           };
         }
         return b;
       }));
 
-      // Add to audit logs
+      // Add to audit logs with unique ID
       const closedLog: TradePosition = {
         ...trade,
+        id: `audit-${trade.id}-${Date.now()}`,
         status: isWin ? 'CLOSED_TP' : 'CLOSED_SL',
+        stageAtClose: trade.stage,
         closePrice: trade.currentPrice,
         realizedPnL: pnl,
         realizedPnLPercent: trade.unrealizedPnLPercent,
@@ -230,26 +312,66 @@ export const App: React.FC = () => {
         exitReason: `Manual close @ $${trade.currentPrice} (${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)})`,
       };
 
-      setAuditLogs(logs => [closedLog, ...logs]);
+      setAuditLogs(logs => deduplicateById([closedLog, ...logs]));
       return prev.filter(t => t.id !== tradeId);
     });
   }, []);
 
-  // 4. Open New Trade Action
-  const handleExecuteNewTrade = useCallback((botId: string, coinId: string, direction: TradeDirection) => {
-    const bot = bots.find(b => b.id === botId);
+  // 4. Open New Consensus Staged Trade Action
+  const handleExecuteStagedTrade = useCallback((
+    initiatorBotId: string, 
+    coinId: string, 
+    direction: TradeDirection,
+    explicitStage?: ConsensusStage
+  ) => {
+    const initiatorBot = bots.find(b => b.id === initiatorBotId) || bots[0];
     const coin = coins.find(c => c.id === coinId);
-    if (!bot || !coin) return;
+    if (!coin) return;
 
-    const params = calculateTradeParameters(bot, coin, direction);
+    // Detect all matching bot brains that confirm this setup
+    const matchingBotIds = coin.matchingBots && coin.matchingBots.length > 0 
+      ? coin.matchingBots 
+      : [initiatorBot.id];
+
+    // Ensure initiator bot is included
+    const allConfirmingIds = Array.from(new Set([initiatorBot.id, ...matchingBotIds]));
+    
+    // Stage is determined by the number of confirming bots (1 to 5)
+    const stage: ConsensusStage = explicitStage || (Math.min(5, Math.max(1, allConfirmingIds.length)) as ConsensusStage);
+    
+    const confirmingBots = bots.filter(b => allConfirmingIds.includes(b.id));
+    const confirmingBotIds = confirmingBots.map(b => b.id);
+    const confirmingBotNames = confirmingBots.map(b => `${b.number}. ${b.name}`);
+
+    const params = calculateStagedTradeParameters(
+      masterPortfolio.currentBalance,
+      stage,
+      initiatorBot,
+      confirmingBots,
+      coin,
+      direction
+    );
+
+    const initialHistory = [{
+      stage,
+      timestamp: Date.now(),
+      addedBotId: initiatorBot.id,
+      addedBotName: `${initiatorBot.number}. ${initiatorBot.name}`,
+      rationale: `Initiator signal discovered with ${confirmingBots.length} confirming bot brain${confirmingBots.length > 1 ? 's' : ''}.`,
+      newLeverage: params.leverage,
+      newMargin: params.margin,
+    }];
 
     const newTrade: TradePosition = {
-      id: `trade-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      botId: bot.id,
-      botName: `${bot.number}. ${bot.name}`,
+      id: `trade-stage-${stage}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       symbol: `${coin.symbol}/USDT`,
       name: coin.name,
       direction,
+      stage,
+      initiatorBotId: initiatorBot.id,
+      initiatorBotName: `${initiatorBot.number}. ${initiatorBot.name}`,
+      confirmingBotIds,
+      confirmingBotNames,
       leverage: params.leverage,
       margin: params.margin,
       positionSize: params.positionSize,
@@ -265,16 +387,22 @@ export const App: React.FC = () => {
       entryTime: Date.now(),
       aiReasoning: params.aiReasoning,
       sentimentScore: coin.sentimentScore,
+      stageHistory: initialHistory,
     };
 
-    setActiveTrades(prev => [newTrade, ...prev]);
+    setActiveTrades(prev => deduplicateById([newTrade, ...prev]));
+
+    setMasterPortfolio(mp => ({
+      ...mp,
+      activeStagedTradesCount: mp.activeStagedTradesCount + 1,
+    }));
 
     // Send Telegram alert
     if (telegramConfig.notifyOnTradeOpen) {
-      const msg = formatTelegramTradeOpen(newTrade, bot);
+      const msg = formatTelegramStageTradeOpen(newTrade);
       sendTelegramMessage(msg, 'TRADE_OPEN');
     }
-  }, [bots, coins, telegramConfig, sendTelegramMessage]);
+  }, [bots, coins, masterPortfolio.currentBalance, telegramConfig, sendTelegramMessage]);
 
   // 5. Fetch Initial Market Stats & Live Feed
   useEffect(() => {
@@ -350,7 +478,7 @@ export const App: React.FC = () => {
         });
       });
 
-      // 3. Check active positions against updated coin prices
+      // 3. Check active staged positions against updated coin prices
       setActiveTrades(prevTrades => {
         const remainingTrades: TradePosition[] = [];
 
@@ -389,85 +517,121 @@ export const App: React.FC = () => {
           const slHit = isLong ? currentPrice <= trade.stopLossPrice : currentPrice >= trade.stopLossPrice;
 
           if (tpHit) {
-            // Take Profit Executed! (> $2.00 net win satisfied)
-            const realizedProfit = Math.max(2.05, trade.targetProfitUsd);
-            const bot = bots.find(b => b.id === trade.botId);
+            // Take Profit Executed!
+            const realizedProfit = Math.max(2.00, trade.targetProfitUsd);
+            
+            // Update Master Portfolio
+            setMasterPortfolio(mp => {
+              const newBal = parseFloat((mp.currentBalance + realizedProfit).toFixed(2));
+              const totalNet = parseFloat((newBal - mp.initialBase).toFixed(2));
+              const netROI = parseFloat(((totalNet / mp.initialBase) * 100).toFixed(2));
+              const wins = mp.totalWins + 1;
+              const closed = wins + mp.totalLosses;
+              const winRate = parseFloat(((wins / closed) * 100).toFixed(1));
 
-            if (bot) {
-              const newBal = parseFloat((bot.balance + realizedProfit).toFixed(2));
-              setBots(bList => bList.map(b => b.id === bot.id ? {
-                ...b,
-                balance: newBal,
-                winTrades: b.winTrades + 1,
-                totalPnL: parseFloat((b.totalPnL + realizedProfit).toFixed(2)),
-              } : b));
-
-              const closedRecord: TradePosition = {
-                ...updatedTrade,
-                status: 'CLOSED_TP',
-                closePrice: currentPrice,
-                realizedPnL: realizedProfit,
-                realizedPnLPercent: parseFloat(((realizedProfit / trade.margin) * 100).toFixed(2)),
-                exitTime: Date.now(),
-                exitReason: `🎯 Take-Profit Target Hit (+ $${realizedProfit.toFixed(2)} / >$2.00 Rule Met)`,
+              const updatedMp: MasterPortfolio = {
+                ...mp,
+                currentBalance: newBal,
+                totalRealizedPnL: totalNet,
+                netROI,
+                totalWins: wins,
+                totalTradesExecuted: mp.totalTradesExecuted + 1,
+                fleetWinRate: winRate,
+                activeStagedTradesCount: Math.max(0, prevTrades.length - 1),
               };
-
-              setAuditLogs(logs => [closedRecord, ...logs]);
 
               if (telegramConfig.notifyOnTakeProfit) {
-                const tgMsg = formatTelegramTPHit(closedRecord, { ...bot, balance: newBal, winTrades: bot.winTrades + 1 });
+                const tgMsg = formatTelegramTPHit(closedRecord, updatedMp);
                 sendTelegramMessage(tgMsg, 'TAKE_PROFIT');
               }
-            }
+
+              return updatedMp;
+            });
+
+            // Update confirming bots
+            setBots(bList => bList.map(b => {
+              if (trade.confirmingBotIds.includes(b.id)) {
+                return {
+                  ...b,
+                  winTradesAssisted: b.winTradesAssisted + 1,
+                };
+              }
+              return b;
+            }));
+
+            const closedRecord: TradePosition = {
+              ...updatedTrade,
+              id: `audit-tp-${trade.id}-${Date.now()}`,
+              status: 'CLOSED_TP',
+              stageAtClose: trade.stage,
+              closePrice: currentPrice,
+              realizedPnL: realizedProfit,
+              realizedPnLPercent: parseFloat(((realizedProfit / trade.margin) * 100).toFixed(2)),
+              exitTime: Date.now(),
+              exitReason: `🎯 Take-Profit Target Hit (Stage ${trade.stage} + $${realizedProfit.toFixed(2)} / +${((realizedProfit / trade.margin) * 100).toFixed(1)}% ROI)`,
+            };
+
+            setAuditLogs(logs => deduplicateById([closedRecord, ...logs]));
+
           } else if (slHit) {
-            // Stop Loss Hard Capped at 3% Max Loss
+            // Stop Loss Hard Capped at Stage Risk
             const realizedLoss = -Math.abs(trade.maxLossUsd);
-            const bot = bots.find(b => b.id === trade.botId);
+            
+            // Trigger Autonomous Self-Learning & Evolution Engine!
+            const evolution = analyzeTradeMistakeAndEvolve(
+              updatedTrade, 
+              bots, 
+              masterPortfolio.evolutionGeneration
+            );
 
-            if (bot) {
-              const newBal = parseFloat(Math.max(10, bot.balance + realizedLoss).toFixed(2));
-              const learningAnalysis = analyzeTradeMistake(bot, updatedTrade);
+            // Update Bots with New Heuristic Learning Note & Strategy Weights
+            setBots(evolution.updatedBots);
 
-              const learningNote: BotLearningNote = {
-                id: `learn-${Date.now()}`,
-                timestamp: Date.now(),
-                tradeId: trade.id,
-                symbol: symbolOnly,
-                direction: trade.direction,
-                lossAmount: Math.abs(realizedLoss),
-                mistakeIdentified: learningAnalysis.mistakeIdentified,
-                learnedLesson: learningAnalysis.learnedLesson,
-                parameterAdjustment: learningAnalysis.parameterAdjustment,
-                confidenceScore: Math.floor(88 + Math.random() * 8),
+            const closedRecord: TradePosition = {
+              ...updatedTrade,
+              id: `audit-sl-${trade.id}-${Date.now()}`,
+              status: 'CLOSED_SL',
+              stageAtClose: trade.stage,
+              closePrice: currentPrice,
+              realizedPnL: realizedLoss,
+              realizedPnLPercent: parseFloat(((realizedLoss / trade.margin) * 100).toFixed(2)),
+              exitTime: Date.now(),
+              exitReason: `🛑 Stop-Loss Hit (Stage ${trade.stage} - $${Math.abs(realizedLoss).toFixed(2)} / Master Capital Guarded)`,
+              mistakeAnalysis: `Post-Mortem: ${evolution.learningNote.mistakeIdentified} | Rule Adjusted: ${evolution.learningNote.parameterAdjustment}`,
+            };
+
+            // Update Master Portfolio
+            setMasterPortfolio(mp => {
+              const newBal = parseFloat(Math.max(100, mp.currentBalance + realizedLoss).toFixed(2));
+              const totalNet = parseFloat((newBal - mp.initialBase).toFixed(2));
+              const netROI = parseFloat(((totalNet / mp.initialBase) * 100).toFixed(2));
+              const losses = mp.totalLosses + 1;
+              const closed = mp.totalWins + losses;
+              const winRate = parseFloat(((mp.totalWins / closed) * 100).toFixed(1));
+
+              const updatedMp: MasterPortfolio = {
+                ...mp,
+                currentBalance: newBal,
+                totalRealizedPnL: totalNet,
+                netROI,
+                totalLosses: losses,
+                totalTradesExecuted: mp.totalTradesExecuted + 1,
+                fleetWinRate: winRate,
+                evolutionGeneration: mp.evolutionGeneration + 1,
+                selfLearningAdaptationsCount: mp.selfLearningAdaptationsCount + 1,
+                activeStagedTradesCount: Math.max(0, prevTrades.length - 1),
               };
-
-              setBots(bList => bList.map(b => b.id === bot.id ? {
-                ...b,
-                balance: newBal,
-                lossTrades: b.lossTrades + 1,
-                mistakesCount: b.mistakesCount + 1,
-                totalPnL: parseFloat((b.totalPnL + realizedLoss).toFixed(2)),
-                learningNotes: [learningNote, ...b.learningNotes],
-              } : b));
-
-              const closedRecord: TradePosition = {
-                ...updatedTrade,
-                status: 'CLOSED_SL',
-                closePrice: currentPrice,
-                realizedPnL: realizedLoss,
-                realizedPnLPercent: parseFloat(((realizedLoss / trade.margin) * 100).toFixed(2)),
-                exitTime: Date.now(),
-                exitReason: `🛑 Stop-Loss Hard Cap Hit (- $${Math.abs(realizedLoss).toFixed(2)} / 3% risk)`,
-                mistakeAnalysis: `Post-Mortem: ${learningAnalysis.mistakeIdentified} | Rule Adjusted: ${learningAnalysis.parameterAdjustment}`,
-              };
-
-              setAuditLogs(logs => [closedRecord, ...logs]);
 
               if (telegramConfig.notifyOnStopLoss) {
-                const tgMsg = formatTelegramSLHit(closedRecord, { ...bot, balance: newBal }, learningNote);
+                const tgMsg = formatTelegramSLHit(closedRecord, updatedMp, evolution.learningNote);
                 sendTelegramMessage(tgMsg, 'STOP_LOSS');
               }
-            }
+
+              return updatedMp;
+            });
+
+            setAuditLogs(logs => deduplicateById([closedRecord, ...logs]));
+
           } else {
             remainingTrades.push(updatedTrade);
           }
@@ -479,51 +643,111 @@ export const App: React.FC = () => {
     }, 3500);
 
     return () => clearInterval(interval);
-  }, [is247Running, coins, bots, telegramConfig, sendTelegramMessage]);
+  }, [is247Running, coins, bots, masterPortfolio, telegramConfig, sendTelegramMessage]);
 
-  // 7. Periodic Autonomous Trade Generation for Idle Bots
+  // 7. Periodic Multi-Bot Consensus Scanner (Unlimited Trades + Dynamic Stage Escalation)
   useEffect(() => {
     if (!is247Running) return;
 
-    const autoScanner = setInterval(() => {
-      // Pick an active bot with fewer than 1 running trade
-      const availableBots = bots.filter(b => {
-        const count = activeTrades.filter(t => t.botId === b.id).length;
-        return b.status === 'ACTIVE' && count === 0;
-      });
+    const consensusScanner = setInterval(() => {
+      if (coins.length === 0) return;
 
-      if (availableBots.length > 0 && coins.length > 0) {
-        const targetBot = availableBots[Math.floor(Math.random() * availableBots.length)];
+      // 1. Check if any running Stage 1-4 trade can be escalated to next stage
+      const escalatableTrades = activeTrades.filter(t => t.stage < 5);
+      if (escalatableTrades.length > 0 && Math.random() > 0.4) {
+        const tradeToUpgrade = escalatableTrades[Math.floor(Math.random() * escalatableTrades.length)];
+        const nextStage = (tradeToUpgrade.stage + 1) as ConsensusStage;
         
-        // Find a matching coin
-        const matchedCoin = coins.find(c => c.matchingBots.includes(targetBot.id)) || 
-          coins[Math.floor(Math.random() * 50)];
+        // Pick a bot not yet in confirmingBotIds
+        const remainingBots = bots.filter(b => !tradeToUpgrade.confirmingBotIds.includes(b.id));
+        if (remainingBots.length > 0) {
+          const addedBot = remainingBots[Math.floor(Math.random() * remainingBots.length)];
+          const newConfirmingIds = [...tradeToUpgrade.confirmingBotIds, addedBot.id];
+          const newConfirmingNames = [...tradeToUpgrade.confirmingBotNames, `${addedBot.number}. ${addedBot.name}`];
+          const stageConfig = STAGE_CONFIGS[nextStage];
 
-        const direction: TradeDirection = (matchedCoin.sentimentScore > 10 || matchedCoin.change24h > 0) 
-          ? 'LONG' 
-          : 'SHORT';
+          const maxDynamicMargin = masterPortfolio.currentBalance * 0.05; // Strict 5% cap
+          const rawMargin = Math.min(maxDynamicMargin, masterPortfolio.currentBalance * stageConfig.marginPercent);
+          const newMargin = parseFloat(Math.max(5.00, rawMargin).toFixed(2));
+          const newLeverage = stageConfig.defaultLeverage;
+          const newPositionSize = parseFloat((newMargin * newLeverage).toFixed(2));
 
-        handleExecuteNewTrade(targetBot.id, matchedCoin.id, direction);
+          // Strict 3% max loss cap
+          const maxLossCeiling = masterPortfolio.currentBalance * 0.03;
+          const newMaxLossUsd = parseFloat(Math.min(maxLossCeiling, Math.max(2.00, newMargin * 0.60)).toFixed(2));
+          const newTargetProfitUsd = parseFloat(Math.max(2.50, newMaxLossUsd * stageConfig.rrRatio).toFixed(2));
+
+          const historyEntry = {
+            stage: nextStage,
+            timestamp: Date.now(),
+            addedBotId: addedBot.id,
+            addedBotName: `${addedBot.number}. ${addedBot.name}`,
+            rationale: `${addedBot.name} technical filter confirmed setup confluence. Escalated to Stage ${nextStage} (${newConfirmingIds.length} bots).`,
+            newLeverage,
+            newMargin,
+          };
+
+          setActiveTrades(prev => prev.map(t => {
+            if (t.id === tradeToUpgrade.id) {
+              const upgraded: TradePosition = {
+                ...t,
+                stage: nextStage,
+                confirmingBotIds: newConfirmingIds,
+                confirmingBotNames: newConfirmingNames,
+                margin: newMargin,
+                leverage: newLeverage,
+                positionSize: newPositionSize,
+                maxLossUsd: newMaxLossUsd,
+                targetProfitUsd: newTargetProfitUsd,
+                stageHistory: [...(t.stageHistory || []), historyEntry],
+              };
+
+              if (telegramConfig.notifyOnTradeOpen) {
+                const tgMsg = formatTelegramStageUpgrade(upgraded, `${addedBot.number}. ${addedBot.name}`);
+                sendTelegramMessage(tgMsg, 'TRADE_OPEN');
+              }
+
+              return upgraded;
+            }
+            return t;
+          }));
+          return;
+        }
       }
-    }, 16000); // Evaluates every 16 seconds
 
-    return () => clearInterval(autoScanner);
-  }, [is247Running, bots, activeTrades, coins, handleExecuteNewTrade]);
+      // 2. Discover new staged trades across 500 coin universe (Any bot can initiate)
+      const randomCoin = coins[Math.floor(Math.random() * Math.min(coins.length, 100))];
+      if (!randomCoin) return;
 
-  // 8. Actions Handlers (100% Autonomous Zero-Permission Execution)
+      const isAlreadyTraded = activeTrades.some(t => t.symbol.startsWith(randomCoin.symbol));
+      if (!isAlreadyTraded) {
+        const direction: TradeDirection = (randomCoin.sentimentScore > 10 || randomCoin.change24h > 0) ? 'LONG' : 'SHORT';
+        // Any of the 5 bots can initiate Stage 1 trade
+        const candidateBots = randomCoin.matchingBots && randomCoin.matchingBots.length > 0 
+          ? randomCoin.matchingBots 
+          : bots.map(b => b.id);
+        const initiatorBotId = candidateBots[Math.floor(Math.random() * candidateBots.length)];
+        
+        handleExecuteStagedTrade(initiatorBotId, randomCoin.id, direction);
+      }
+    }, 14000); // Scans every 14 seconds
+
+    return () => clearInterval(consensusScanner);
+  }, [is247Running, activeTrades, coins, bots, masterPortfolio.currentBalance, telegramConfig, handleExecuteStagedTrade, sendTelegramMessage]);
+
+  // 8. Action Handlers (100% Autonomous Zero-Permission Execution)
   const handleOpenManualTradeForBot = (bot: TradingBot) => {
-    // Autonomously scan 500 coin universe and instantly fire live trade without permission prompt
+    // Autonomously scan 500 coin universe and instantly fire live consensus staged trade
     const matchedCoin = coins.find(c => c.matchingBots.includes(bot.id)) || 
       coins[Math.floor(Math.random() * Math.min(coins.length, 50))];
     const direction: TradeDirection = (matchedCoin.sentimentScore > 10 || matchedCoin.change24h > 0) ? 'LONG' : 'SHORT';
-    handleExecuteNewTrade(bot.id, matchedCoin.id, direction);
+    handleExecuteStagedTrade(bot.id, matchedCoin.id, direction);
   };
 
   const handleTradeCoinFromScanner = (coin: CryptoCoin, botId: string) => {
     const targetBot = bots.find(b => b.id === botId) || bots[0];
     const direction: TradeDirection = (coin.sentimentScore > 10 || coin.change24h > 0) ? 'LONG' : 'SHORT';
-    // Immediately execute live trade autonomously without confirmation modal
-    handleExecuteNewTrade(targetBot.id, coin.id, direction);
+    handleExecuteStagedTrade(targetBot.id, coin.id, direction);
   };
 
   const handleToggleBotStatus = (botId: string) => {
@@ -534,18 +758,30 @@ export const App: React.FC = () => {
   };
 
   const handleResetPortfolio = () => {
+    setMasterPortfolio({
+      initialBase: 1000.00,
+      currentBalance: 1000.00,
+      totalRealizedPnL: 0,
+      netROI: 0,
+      totalWins: 0,
+      totalLosses: 0,
+      totalTradesExecuted: 0,
+      fleetWinRate: 0,
+      evolutionGeneration: 1,
+      selfLearningAdaptationsCount: 0,
+      activeStagedTradesCount: 0,
+    });
     setBots(INITIAL_BOTS.map(b => ({
       ...b,
-      balance: 100.00,
-      initialBalance: 100.00,
-      winTrades: 0,
-      lossTrades: 0,
-      totalPnL: 0,
+      winTradesAssisted: 0,
+      lossTradesAssisted: 0,
+      mistakesCount: 0,
+      learningNotes: [],
     })));
     setActiveTrades([]);
     setUptimeSeconds(0);
-    localStorage.setItem('ai_fleet_uptime_seconds_v1', '0');
-    sendTelegramMessage(`🔄 *[PORTFOLIO RESET]*\nAll 5 Bots reset back to initial $100.00 base. 24/7 Autonomous scanning resumed from 00:00:00.`, 'SYSTEM');
+    localStorage.setItem('ai_fleet_uptime_seconds_v2', '0');
+    sendTelegramMessage(`🔄 *[PORTFOLIO RESET]*\nMaster Portfolio reset back to initial $1,000.00 base. 24/7 Autonomous consensus scanning resumed from 00:00:00.`, 'SYSTEM');
   };
 
   const handleRunLiveFleetScan = async () => {
@@ -594,10 +830,10 @@ export const App: React.FC = () => {
           strategyTitle: bot.strategyTitle,
           symbol: customText ? 'CUSTOM-ASSET' : 'SOL',
           direction: 'LONG',
-          leverage: 8,
+          leverage: 14,
           entryPrice: 185.00,
           stopLossPrice: 174.00,
-          lossAmount: 3.00,
+          lossAmount: 18.00,
         }),
       });
 
@@ -609,11 +845,13 @@ export const App: React.FC = () => {
           tradeId: `gemini-audit-${Date.now()}`,
           symbol: 'SOL',
           direction: 'LONG',
-          lossAmount: 3.00,
+          stage: 3,
+          lossAmount: 18.00,
           mistakeIdentified: data.mistakeIdentified,
           learnedLesson: data.learnedLesson,
           parameterAdjustment: data.parameterAdjustment,
           confidenceScore: 95,
+          evolutionGeneration: masterPortfolio.evolutionGeneration + 1,
         };
 
         setBots(bList => bList.map(b => b.id === bot.id ? {
@@ -621,6 +859,12 @@ export const App: React.FC = () => {
           mistakesCount: b.mistakesCount + 1,
           learningNotes: [newNote, ...b.learningNotes],
         } : b));
+
+        setMasterPortfolio(mp => ({
+          ...mp,
+          evolutionGeneration: mp.evolutionGeneration + 1,
+          selfLearningAdaptationsCount: mp.selfLearningAdaptationsCount + 1,
+        }));
       }
     } catch (e) {
       console.error('Error invoking Gemini post-mortem:', e);
@@ -653,7 +897,7 @@ export const App: React.FC = () => {
   const handleSendFleetSummaryNow = async () => {
     setIsSendingTelegram(true);
     try {
-      const summaryText = formatTelegramFleetSummary(bots, activeTrades);
+      const summaryText = formatTelegramFleetSummary(masterPortfolio, activeTrades, bots);
       await sendTelegramMessage(summaryText, 'HOURLY_SUMMARY');
     } finally {
       setIsSendingTelegram(false);
@@ -668,12 +912,12 @@ export const App: React.FC = () => {
         bots={bots}
         activeTrades={activeTrades}
         auditLogs={auditLogs}
+        masterPortfolio={masterPortfolio}
         telegramConfig={telegramConfig}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
         onOpenResetModal={() => setIsResetModalOpen(true)}
-        onOpenExportModal={() => setIsExportModalOpen(true)}
         onSendTelegramSummary={handleSendFleetSummaryNow}
         is247Running={is247Running}
         setIs247Running={setIs247Running}
@@ -684,33 +928,28 @@ export const App: React.FC = () => {
       {/* Main App Body */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 sm:px-6 space-y-6">
         
-        {/* Fleet Combined Overview & Heartbeat Card */}
+        {/* Fleet Master Portfolio & 24/7 Heartbeat Panel */}
         <FleetOverviewCard
           bots={bots}
           activeTrades={activeTrades}
           auditLogs={auditLogs}
+          masterPortfolio={masterPortfolio}
           uptimeSeconds={uptimeSeconds}
           is247Running={is247Running}
           setIs247Running={setIs247Running}
           onOpenResetModal={() => setIsResetModalOpen(true)}
-          onOpenExportModal={() => setIsExportModalOpen(true)}
         />
 
-        {/* Tab 1: 5 Specialist Bots Dashboard */}
-        {activeTab === 'bots' && (
-          <BotsDashboard
-            bots={bots}
+        {/* Tab 0: Stage Performance Dashboard (Stages 1-5 Analytics) */}
+        {activeTab === 'stages' && (
+          <StagePerformanceView
+            auditLogs={auditLogs}
             activeTrades={activeTrades}
-            onManualTradeClick={handleOpenManualTradeForBot}
-            onCloseTrade={handleCloseTrade}
-            onToggleBotStatus={handleToggleBotStatus}
-            onViewBrainLessons={(bot) => {
-              setActiveTab('brain');
-            }}
+            masterPortfolio={masterPortfolio}
           />
         )}
 
-        {/* Tab 2: Live Active Trades */}
+        {/* Tab 1: Live Active Staged Trades */}
         {activeTab === 'trades' && (
           <ActiveTradesView
             activeTrades={activeTrades}
@@ -721,8 +960,8 @@ export const App: React.FC = () => {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
-                    botName: trade.botName,
-                    strategyTitle: trade.botName,
+                    botName: trade.initiatorBotName,
+                    strategyTitle: trade.initiatorBotName,
                     symbol: trade.symbol,
                     price: trade.currentPrice,
                     change24h: trade.unrealizedPnLPercent,
@@ -746,7 +985,21 @@ export const App: React.FC = () => {
           />
         )}
 
-        {/* Tab 3: 500-Coin Live Market Scanner */}
+        {/* Tab 2: 5 Specialist Consensus Brains */}
+        {activeTab === 'bots' && (
+          <BotsDashboard
+            bots={bots}
+            activeTrades={activeTrades}
+            onManualTradeClick={handleOpenManualTradeForBot}
+            onCloseTrade={handleCloseTrade}
+            onToggleBotStatus={handleToggleBotStatus}
+            onViewBrainLessons={() => {
+              setActiveTab('brain');
+            }}
+          />
+        )}
+
+        {/* Tab 3: Top 500 Live Market Scanner */}
         {activeTab === 'scanner' && (
           <MarketScannerView
             coins={coins}
@@ -759,7 +1012,7 @@ export const App: React.FC = () => {
           />
         )}
 
-        {/* Tab 4: AI Brain & Mistake Learning */}
+        {/* Tab 4: AI Brain & Self-Learning Engine */}
         {activeTab === 'brain' && (
           <MistakeLearningView
             bots={bots}
@@ -805,20 +1058,12 @@ export const App: React.FC = () => {
       {/* Footer */}
       <footer className="w-full bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500 font-sans">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>5-Bot Autonomous AI Crypto Trading Fleet • 24x7 Live Market Execution</span>
-          <span>Compounding 5% Margin • Max 3% Loss • &gt;$2.00 Target • Gemini 3.7 Flash Brain</span>
+          <span>NEXUS FIVE Consensus Trading Fleet • Multi-Bot Staged Execution (Stages 1-5)</span>
+          <span>$1,000 Master Portfolio • Autonomous Self-Learning & Heuristic Evolution • Gemini 3.7 Flash</span>
         </div>
       </footer>
 
       {/* Modals */}
-      <ExportProjectModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        bots={bots}
-        activeTrades={activeTrades}
-        auditLogs={auditLogs}
-      />
-
       <TelegramSetupModal
         isOpen={isTelegramModalOpen}
         onClose={() => setIsTelegramModalOpen(false)}

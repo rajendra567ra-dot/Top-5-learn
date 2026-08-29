@@ -185,7 +185,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({
             No closed trades matching this filter.
           </div>
         ) : (
-          filteredLogs.map((log) => {
+          filteredLogs.map((log, idx) => {
             const isTP = log.status === 'CLOSED_TP';
             const isLong = log.direction === 'LONG';
             const pnl = log.realizedPnL || 0;
@@ -193,7 +193,7 @@ export const AuditLogsView: React.FC<AuditLogsViewProps> = ({
 
             return (
               <div
-                key={log.id}
+                key={`${log.id}-${idx}`}
                 id={`audit-row-${log.id}`}
                 className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-slate-300 transition-all space-y-3"
               >
