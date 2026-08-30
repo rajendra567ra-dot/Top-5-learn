@@ -314,18 +314,18 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                     </div>
                   </div>
 
-                  {/* AI Consensus Reasoning */}
+                  {/* AI Consensus Reasoning & Why Trade Was Taken */}
                   <div className="mt-3 p-3.5 rounded-xl bg-purple-50 border border-purple-200 text-xs">
-                    <div className="flex items-center justify-between text-purple-700 font-bold mb-1">
-                      <span className="flex items-center gap-1.5 text-[11px]">
+                    <div className="flex items-center justify-between text-purple-700 font-bold mb-1.5">
+                      <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide">
                         <BrainCircuit className="w-3.5 h-3.5 text-purple-600" />
-                        FLEET CONSENSUS THESIS (STAGE {trade.stage}):
+                        WHY FLEET TOOK THIS TRADE (STAGE {trade.stage} THESIS):
                       </span>
                       <span className="text-[10px] text-purple-600 font-mono">
                         Sentiment: {trade.sentimentScore > 0 ? '+' : ''}{trade.sentimentScore}/100
                       </span>
                     </div>
-                    <p className="text-slate-700 text-xs leading-relaxed italic">
+                    <p className="text-slate-800 text-xs leading-relaxed font-sans bg-white/70 p-2.5 rounded-lg border border-purple-100">
                       "{trade.aiReasoning}"
                     </p>
                   </div>

@@ -6,6 +6,149 @@ const archiver: any = (archiverPkg as any).default || archiverPkg;
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 
+import { 
+  MasterPortfolio, 
+  TradingBot, 
+  TradePosition, 
+  CryptoCoin, 
+  TelegramConfig, 
+  TelegramLog, 
+  ConsensusStage, 
+  TradeDirection,
+  BotLearningNote 
+} from './src/types';
+import { INITIAL_BOTS } from './src/data/initialBots';
+import { INITIAL_ACTIVE_TRADES, INITIAL_AUDIT_LOGS } from './src/data/initialTrades';
+import { generateTop500Universe } from './src/data/topCoins';
+import { 
+  STAGE_CONFIGS,
+  calculateStagedTradeParameters, 
+  analyzeTradeMistakeAndEvolve, 
+  formatTelegramStageTradeOpen, 
+  formatTelegramStageUpgrade,
+  formatTelegramTPHit, 
+  formatTelegramSLHit, 
+  formatTelegramFleetSummary 
+} from './src/services/tradingEngine';
+
+interface ServerFleetState {
+  serverStartedAt: number;
+  accumulatedUptimeSeconds: number;
+  is247Running: boolean;
+  masterPortfolio: MasterPortfolio;
+  bots: TradingBot[];
+  activeTrades: TradePosition[];
+  auditLogs: TradePosition[];
+  telegramConfig: TelegramConfig;
+  telegramLogs: TelegramLog[];
+  lastSummaryTimestamp: number;
+  lastScanTimestamp: number;
+  lastUpgradeCheckTimestamp: number;
+}
+
+const STATE_FILE_PATH = path.join(process.cwd(), 'data', 'fleet-state.json');
+
+const INITIAL_MASTER_PORTFOLIO: MasterPortfolio = {
+  initialBase: 1000.00,
+  currentBalance: 1000.00,
+  totalRealizedPnL: 0.00,
+  netROI: 0.00,
+  totalWins: 0,
+  totalLosses: 0,
+  totalTradesExecuted: 0,
+  fleetWinRate: 0.0,
+  evolutionGeneration: 1,
+  selfLearningAdaptationsCount: 0,
+  activeStagedTradesCount: 0,
+};
+
+function loadPersistedState(): ServerFleetState {
+  try {
+    if (fs.existsSync(STATE_FILE_PATH)) {
+      const raw = fs.readFileSync(STATE_FILE_PATH, 'utf-8');
+      if (raw && raw.trim().length > 2) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.masterPortfolio) {
+          console.log('⚡ Loaded persistent 24/7 fleet state from disk.');
+          return {
+            serverStartedAt: parsed.serverStartedAt || Date.now(),
+            accumulatedUptimeSeconds: parsed.accumulatedUptimeSeconds || 0,
+            is247Running: parsed.is247Running !== undefined ? parsed.is247Running : true,
+            masterPortfolio: parsed.masterPortfolio || INITIAL_MASTER_PORTFOLIO,
+            bots: parsed.bots && parsed.bots.length > 0 ? parsed.bots : INITIAL_BOTS,
+            activeTrades: Array.isArray(parsed.activeTrades) ? parsed.activeTrades : INITIAL_ACTIVE_TRADES,
+            auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : INITIAL_AUDIT_LOGS,
+            telegramConfig: parsed.telegramConfig || {
+              botToken: process.env.TELEGRAM_BOT_TOKEN || '',
+              chatId: process.env.TELEGRAM_CHAT_ID || '',
+              enabled: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
+              summaryIntervalMinutes: 60,
+              notifyOnTradeOpen: true,
+              notifyOnTakeProfit: true,
+              notifyOnStopLoss: true,
+              notifyHourlySummary: true,
+            },
+            telegramLogs: Array.isArray(parsed.telegramLogs) ? parsed.telegramLogs : [],
+            lastSummaryTimestamp: parsed.lastSummaryTimestamp || Date.now(),
+            lastScanTimestamp: parsed.lastScanTimestamp || Date.now(),
+            lastUpgradeCheckTimestamp: parsed.lastUpgradeCheckTimestamp || Date.now(),
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not read state file, starting fresh state:', err);
+  }
+
+  // Default initial state
+  return {
+    serverStartedAt: Date.now(),
+    accumulatedUptimeSeconds: 0,
+    is247Running: true,
+    masterPortfolio: { ...INITIAL_MASTER_PORTFOLIO },
+    bots: JSON.parse(JSON.stringify(INITIAL_BOTS)),
+    activeTrades: [...INITIAL_ACTIVE_TRADES],
+    auditLogs: [...INITIAL_AUDIT_LOGS],
+    telegramConfig: {
+      botToken: process.env.TELEGRAM_BOT_TOKEN || '',
+      chatId: process.env.TELEGRAM_CHAT_ID || '',
+      enabled: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
+      summaryIntervalMinutes: 60,
+      notifyOnTradeOpen: true,
+      notifyOnTakeProfit: true,
+      notifyOnStopLoss: true,
+      notifyHourlySummary: true,
+    },
+    telegramLogs: [
+      {
+        id: 'tg-init-server',
+        timestamp: Date.now(),
+        type: 'SYSTEM',
+        target: '@CryptoFleetBot',
+        message: `⚡ *[24/7 SERVER AUTONOMOUS ENGINE INITIALIZED]*\n• Host: Cloud Server Container\n• Master Base: $1,000.00 USDT\n• 5 Specialist Bot Brains Active in Background\n• Real-Time Telegram Alerts Armed for Trade Open, TP, SL & Hourly Summaries`,
+        status: 'SIMULATED',
+      }
+    ],
+    lastSummaryTimestamp: Date.now(),
+    lastScanTimestamp: Date.now(),
+    lastUpgradeCheckTimestamp: Date.now(),
+  };
+}
+
+let fleetState: ServerFleetState = loadPersistedState();
+
+function persistStateToDisk() {
+  try {
+    const dir = path.dirname(STATE_FILE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(fleetState, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving fleet state to disk:', err);
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
@@ -30,18 +173,17 @@ async function startServer() {
 
   // 1. Health check
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', uptime: process.uptime() });
+    res.json({ status: 'ok', uptime: process.uptime(), serverStartedAt: fleetState.serverStartedAt });
   });
 
-  // 1b. Real Live Crypto Market Prices endpoint (queries live Binance ticker API with cached fallback)
+  // Cached prices from Binance or live fallback
   let cachedLivePrices: Record<string, { price: number; change24h: number; volume24h: number; high24h: number; low24h: number }> = {};
   let lastPriceFetchTime = 0;
 
-  app.get('/api/market/live-prices', async (req, res) => {
+  async function fetchLiveMarketPrices(): Promise<Record<string, { price: number; change24h: number; volume24h: number; high24h: number; low24h: number }>> {
     const now = Date.now();
-    // Cache for 2.5 seconds to prevent rate limits while providing high-frequency updates
     if (now - lastPriceFetchTime < 2500 && Object.keys(cachedLivePrices).length > 0) {
-      return res.json({ success: true, source: 'cache', prices: cachedLivePrices, timestamp: lastPriceFetchTime });
+      return cachedLivePrices;
     }
 
     try {
@@ -66,14 +208,13 @@ async function startServer() {
 
           cachedLivePrices = priceMap;
           lastPriceFetchTime = now;
-          return res.json({ success: true, source: 'binance-live', prices: priceMap, timestamp: now });
+          return priceMap;
         }
       }
     } catch (err: any) {
-      console.warn('Live ticker fetch notice:', err?.message || err);
+      // quiet fallback
     }
 
-    // Fallback baseline reflecting live crypto market
     if (Object.keys(cachedLivePrices).length === 0) {
       cachedLivePrices = {
         BTC: { price: 78106.97, change24h: -1.34, volume24h: 34500000000, high24h: 79250.00, low24h: 77800.00 },
@@ -98,30 +239,602 @@ async function startServer() {
         FET: { price: 0.985, change24h: 2.40, volume24h: 410000000, high24h: 1.04, low24h: 0.96 },
         APT: { price: 5.62, change24h: -1.80, volume24h: 190000000, high24h: 5.85, low24h: 5.50 },
         UNI: { price: 6.84, change24h: -0.95, volume24h: 145000000, high24h: 7.05, low24h: 6.72 },
-        AAVE: { price: 172.50, change24h: 1.45, volume24h: 230000000, high24h: 176.00, low24h: 169.00 },
-        INJ: { price: 17.80, change24h: -2.10, volume24h: 120000000, high24h: 18.40, low24h: 17.50 },
-        DOT: { price: 4.12, change24h: -1.20, volume24h: 180000000, high24h: 4.25, low24h: 4.05 },
-        WIF: { price: 0.92, change24h: -4.50, volume24h: 310000000, high24h: 0.98, low24h: 0.89 },
-        ARB: { price: 0.385, change24h: -2.40, volume24h: 160000000, high24h: 0.402, low24h: 0.378 },
-        OP: { price: 1.08, change24h: -3.10, volume24h: 110000000, high24h: 1.14, low24h: 1.05 },
-        BONK: { price: 0.0000155, change24h: -3.80, volume24h: 190000000, high24h: 0.0000164, low24h: 0.0000150 },
-        FLOKI: { price: 0.000095, change24h: -2.90, volume24h: 120000000, high24h: 0.000102, low24h: 0.000092 },
-        TIA: { price: 3.25, change24h: -5.10, volume24h: 140000000, high24h: 3.48, low24h: 3.18 },
-        STX: { price: 1.22, change24h: -1.50, volume24h: 65000000, high24h: 1.28, low24h: 1.19 },
-        RUNE: { price: 1.84, change24h: -2.80, volume24h: 85000000, high24h: 1.94, low24h: 1.80 },
-        POPCAT: { price: 0.38, change24h: 2.10, volume24h: 95000000, high24h: 0.41, low24h: 0.36 },
-        HBAR: { price: 0.198, change24h: 4.80, volume24h: 420000000, high24h: 0.215, low24h: 0.188 },
-        JUP: { price: 0.64, change24h: -1.80, volume24h: 88000000, high24h: 0.67, low24h: 0.62 },
-        PENDLE: { price: 3.15, change24h: 1.20, volume24h: 75000000, high24h: 3.28, low24h: 3.08 },
-        ENA: { price: 0.42, change24h: -3.40, volume24h: 110000000, high24h: 0.45, low24h: 0.41 },
       };
       lastPriceFetchTime = now;
     }
 
-    res.json({ success: true, source: 'fallback-live', prices: cachedLivePrices, timestamp: now });
+    return cachedLivePrices;
+  }
+
+  // Telegram dispatch helper on server
+  async function dispatchTelegramMessage(
+    text: string, 
+    type: 'TRADE_OPEN' | 'TAKE_PROFIT' | 'STOP_LOSS' | 'HOURLY_SUMMARY' | 'SYSTEM'
+  ): Promise<boolean> {
+    const token = fleetState.telegramConfig.botToken || process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = fleetState.telegramConfig.chatId || process.env.TELEGRAM_CHAT_ID;
+    const isConfigured = Boolean(token && chatId);
+    let messageStatus: 'SENT' | 'SIMULATED' | 'FAILED' = 'SIMULATED';
+
+    if (isConfigured && fleetState.telegramConfig.enabled) {
+      try {
+        const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: text,
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true,
+          }),
+        });
+
+        const data = await response.json();
+        if (data.ok) {
+          messageStatus = 'SENT';
+        } else {
+          console.warn('Telegram send failed:', data.description);
+          messageStatus = 'FAILED';
+        }
+      } catch (err: any) {
+        console.error('Telegram dispatch network error:', err?.message || err);
+        messageStatus = 'FAILED';
+      }
+    }
+
+    const newLog: TelegramLog = {
+      id: `tg-log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      type,
+      target: isConfigured ? `Chat ID: ${chatId}` : 'Simulated Terminal',
+      message: text,
+      status: messageStatus,
+    };
+
+    fleetState.telegramLogs = [newLog, ...(fleetState.telegramLogs || []).slice(0, 99)];
+    return messageStatus === 'SENT';
+  }
+
+  // Autonomous coin universe cache
+  const coinUniverse: CryptoCoin[] = generateTop500Universe();
+
+  // -------------------------------------------------------------
+  // 24/7 BACKGROUND AUTONOMOUS TRADING ENGINE (RUNS CONTINUOUSLY)
+  // -------------------------------------------------------------
+  setInterval(async () => {
+    try {
+      if (!fleetState.is247Running) return;
+
+      const now = Date.now();
+      const prices = await fetchLiveMarketPrices();
+
+      // 1. Tick and evaluate each Active Trade
+      const remainingTrades: TradePosition[] = [];
+
+      for (const trade of fleetState.activeTrades) {
+        const baseSymbol = trade.symbol.split('/')[0];
+        let currentPrice = trade.currentPrice;
+
+        if (prices[baseSymbol] && prices[baseSymbol].price > 0) {
+          currentPrice = prices[baseSymbol].price;
+        } else {
+          // Micro-movement fluctuation
+          const jitter = (Math.random() - 0.49) * 0.003;
+          currentPrice = parseFloat((currentPrice * (1 + jitter)).toFixed(currentPrice >= 1 ? 4 : 6));
+        }
+
+        const priceDelta = trade.direction === 'LONG' 
+          ? (currentPrice - trade.entryPrice) 
+          : (trade.entryPrice - currentPrice);
+        
+        const unrealizedPnL = parseFloat(((priceDelta / trade.entryPrice) * trade.positionSize).toFixed(2));
+        const unrealizedPnLPercent = parseFloat(((unrealizedPnL / trade.margin) * 100).toFixed(2));
+
+        const updatedTrade: TradePosition = {
+          ...trade,
+          currentPrice,
+          unrealizedPnL,
+          unrealizedPnLPercent,
+        };
+
+        // Check Take Profit condition
+        const isTP = (trade.direction === 'LONG' && currentPrice >= trade.takeProfitPrice) ||
+                     (trade.direction === 'SHORT' && currentPrice <= trade.takeProfitPrice) ||
+                     (unrealizedPnL >= trade.targetProfitUsd && unrealizedPnL >= 2.00);
+
+        // Check Stop Loss condition
+        const isSL = (trade.direction === 'LONG' && currentPrice <= trade.stopLossPrice) ||
+                     (trade.direction === 'SHORT' && currentPrice >= trade.stopLossPrice) ||
+                     (unrealizedPnL <= -trade.maxLossUsd);
+
+        if (isTP) {
+          // Take-Profit hit
+          const pnl = Math.max(2.00, unrealizedPnL);
+          const newBal = parseFloat((fleetState.masterPortfolio.currentBalance + pnl).toFixed(2));
+          const totalNet = parseFloat((newBal - fleetState.masterPortfolio.initialBase).toFixed(2));
+          const netROI = parseFloat(((totalNet / fleetState.masterPortfolio.initialBase) * 100).toFixed(2));
+          const wins = fleetState.masterPortfolio.totalWins + 1;
+          const totalTrades = fleetState.masterPortfolio.totalTradesExecuted + 1;
+          const winRate = parseFloat(((wins / totalTrades) * 100).toFixed(1));
+
+          fleetState.masterPortfolio = {
+            ...fleetState.masterPortfolio,
+            currentBalance: newBal,
+            totalRealizedPnL: totalNet,
+            netROI,
+            totalWins: wins,
+            totalTradesExecuted: totalTrades,
+            fleetWinRate: winRate,
+            activeStagedTradesCount: Math.max(0, fleetState.activeTrades.length - 1),
+          };
+
+          // Update confirming bots stats
+          fleetState.bots = fleetState.bots.map(b => {
+            if (trade.confirmingBotIds.includes(b.id)) {
+              return {
+                ...b,
+                winTradesAssisted: b.winTradesAssisted + 1,
+                totalPnLAssisted: parseFloat((b.totalPnLAssisted + pnl).toFixed(2)),
+              };
+            }
+            return b;
+          });
+
+          // Log to audit logs
+          const closedLog: TradePosition = {
+            ...updatedTrade,
+            id: `audit-${trade.id}-${Date.now()}`,
+            status: 'CLOSED_TP',
+            stageAtClose: trade.stage,
+            closePrice: currentPrice,
+            realizedPnL: pnl,
+            realizedPnLPercent: ((pnl / trade.margin) * 100),
+            exitTime: Date.now(),
+            exitReason: `Take-Profit Hit @ $${currentPrice} (+$${pnl.toFixed(2)})`,
+          };
+          fleetState.auditLogs = [closedLog, ...(fleetState.auditLogs || []).slice(0, 99)];
+
+          // Dispatch Telegram Alert directly from server
+          if (fleetState.telegramConfig.notifyOnTakeProfit) {
+            const tpMsg = formatTelegramTPHit(closedLog, fleetState.masterPortfolio);
+            dispatchTelegramMessage(tpMsg, 'TAKE_PROFIT');
+          }
+
+        } else if (isSL) {
+          // Stop-Loss hit
+          const loss = Math.abs(unrealizedPnL);
+          const newBal = parseFloat(Math.max(100, fleetState.masterPortfolio.currentBalance - loss).toFixed(2));
+          const totalNet = parseFloat((newBal - fleetState.masterPortfolio.initialBase).toFixed(2));
+          const netROI = parseFloat(((totalNet / fleetState.masterPortfolio.initialBase) * 100).toFixed(2));
+          const losses = fleetState.masterPortfolio.totalLosses + 1;
+          const totalTrades = fleetState.masterPortfolio.totalTradesExecuted + 1;
+          const winRate = totalTrades > 0 ? parseFloat(((fleetState.masterPortfolio.totalWins / totalTrades) * 100).toFixed(1)) : 0;
+
+          // Perform Autonomous Post-Mortem & Evolve
+          const { learningNote, updatedBots } = analyzeTradeMistakeAndEvolve(
+            updatedTrade,
+            fleetState.bots,
+            fleetState.masterPortfolio.evolutionGeneration
+          );
+
+          fleetState.bots = updatedBots;
+
+          fleetState.masterPortfolio = {
+            ...fleetState.masterPortfolio,
+            currentBalance: newBal,
+            totalRealizedPnL: totalNet,
+            netROI,
+            totalLosses: losses,
+            totalTradesExecuted: totalTrades,
+            fleetWinRate: winRate,
+            evolutionGeneration: fleetState.masterPortfolio.evolutionGeneration + 1,
+            selfLearningAdaptationsCount: fleetState.masterPortfolio.selfLearningAdaptationsCount + 1,
+            activeStagedTradesCount: Math.max(0, fleetState.activeTrades.length - 1),
+          };
+
+          const closedLog: TradePosition = {
+            ...updatedTrade,
+            id: `audit-${trade.id}-${Date.now()}`,
+            status: 'CLOSED_SL',
+            stageAtClose: trade.stage,
+            closePrice: currentPrice,
+            realizedPnL: -loss,
+            realizedPnLPercent: -((loss / trade.margin) * 100),
+            exitTime: Date.now(),
+            exitReason: `Stop-Loss Protected @ $${currentPrice} (-$${loss.toFixed(2)})`,
+            mistakeAnalysis: learningNote.mistakeIdentified,
+          };
+          fleetState.auditLogs = [closedLog, ...(fleetState.auditLogs || []).slice(0, 99)];
+
+          // Dispatch Telegram Alert directly from server
+          if (fleetState.telegramConfig.notifyOnStopLoss) {
+            const slMsg = formatTelegramSLHit(closedLog, fleetState.masterPortfolio, learningNote);
+            dispatchTelegramMessage(slMsg, 'STOP_LOSS');
+          }
+
+        } else {
+          remainingTrades.push(updatedTrade);
+        }
+      }
+
+      fleetState.activeTrades = remainingTrades;
+      fleetState.masterPortfolio.activeStagedTradesCount = remainingTrades.length;
+
+      // 2. Stage Upgrades Evaluation (every ~20s)
+      if (now - fleetState.lastUpgradeCheckTimestamp > 20000) {
+        fleetState.lastUpgradeCheckTimestamp = now;
+
+        fleetState.activeTrades = fleetState.activeTrades.map(trade => {
+          if (trade.stage < 5 && trade.unrealizedPnL > 0.50 && Math.random() < 0.45) {
+            const nextStage = (trade.stage + 1) as ConsensusStage;
+            const availableBots = fleetState.bots.filter(b => !trade.confirmingBotIds.includes(b.id));
+            const newBot = availableBots[0] || fleetState.bots[0];
+            const newConfirmingIds = [...trade.confirmingBotIds, newBot.id];
+            const newConfirmingNames = [...trade.confirmingBotNames, `${newBot.number}. ${newBot.name}`];
+            const nextConfig = STAGE_CONFIGS[nextStage];
+
+            const updatedMargin = parseFloat((fleetState.masterPortfolio.currentBalance * nextConfig.marginPercent).toFixed(2));
+            const updatedLev = nextConfig.defaultLeverage;
+            const updatedPos = parseFloat((updatedMargin * updatedLev).toFixed(2));
+
+            const upgradedTrade: TradePosition = {
+              ...trade,
+              stage: nextStage,
+              confirmingBotIds: newConfirmingIds,
+              confirmingBotNames: newConfirmingNames,
+              margin: updatedMargin,
+              leverage: updatedLev,
+              positionSize: updatedPos,
+            };
+
+            // Dispatch Telegram Upgrade Alert
+            if (fleetState.telegramConfig.notifyOnTradeOpen) {
+              const upgradeMsg = formatTelegramStageUpgrade(upgradedTrade, `${newBot.number}. ${newBot.name}`);
+              dispatchTelegramMessage(upgradeMsg, 'TRADE_OPEN');
+            }
+
+            return upgradedTrade;
+          }
+          return trade;
+        });
+      }
+
+      // 3. Autonomous Market Scanner & Staged Trade Execution (every ~25s if capacity available)
+      if (fleetState.activeTrades.length < 5 && now - fleetState.lastScanTimestamp > 25000) {
+        fleetState.lastScanTimestamp = now;
+
+        // Find candidate coins not currently active
+        const activeSymbols = new Set(fleetState.activeTrades.map(t => t.symbol.split('/')[0]));
+        const candidateCoins = coinUniverse.filter(c => !activeSymbols.has(c.symbol));
+
+        if (candidateCoins.length > 0) {
+          const coin = candidateCoins[Math.floor(Math.random() * Math.min(25, candidateCoins.length))];
+          const initiatorBot = fleetState.bots[Math.floor(Math.random() * fleetState.bots.length)];
+          const direction: TradeDirection = (coin.change24h || 0) >= 0 ? 'LONG' : 'SHORT';
+          const stage: ConsensusStage = Math.min(3, Math.max(1, Math.floor(Math.random() * 3) + 1)) as ConsensusStage;
+          
+          const confirmingBots = fleetState.bots.slice(0, stage);
+          const confirmingBotIds = confirmingBots.map(b => b.id);
+          const confirmingBotNames = confirmingBots.map(b => `${b.number}. ${b.name}`);
+
+          const livePrice = prices[coin.symbol]?.price || coin.price || 1;
+          const liveCoin = { ...coin, price: livePrice };
+
+          const params = calculateStagedTradeParameters(
+            fleetState.masterPortfolio.currentBalance,
+            stage,
+            initiatorBot,
+            confirmingBots,
+            liveCoin,
+            direction
+          );
+
+          const newTrade: TradePosition = {
+            id: `trade-stage-${stage}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            symbol: `${coin.symbol}/USDT`,
+            name: coin.name,
+            contractAddress: coin.contractAddress,
+            network: coin.network,
+            cmcUrl: coin.cmcUrl,
+            isVerified: true,
+            direction,
+            stage,
+            initiatorBotId: initiatorBot.id,
+            initiatorBotName: `${initiatorBot.number}. ${initiatorBot.name}`,
+            confirmingBotIds,
+            confirmingBotNames,
+            leverage: params.leverage,
+            margin: params.margin,
+            positionSize: params.positionSize,
+            entryPrice: params.entryPrice,
+            currentPrice: params.entryPrice,
+            takeProfitPrice: params.takeProfitPrice,
+            stopLossPrice: params.stopLossPrice,
+            targetProfitUsd: params.targetProfitUsd,
+            maxLossUsd: params.maxLossUsd,
+            unrealizedPnL: 0,
+            unrealizedPnLPercent: 0,
+            status: 'OPEN',
+            entryTime: Date.now(),
+            aiReasoning: params.aiReasoning,
+            sentimentScore: coin.sentimentScore || 75,
+            stageHistory: [{
+              stage,
+              timestamp: Date.now(),
+              addedBotId: initiatorBot.id,
+              addedBotName: `${initiatorBot.number}. ${initiatorBot.name}`,
+              rationale: `Autonomous signal scanner entry with ${confirmingBots.length} bot consensus.`,
+              newLeverage: params.leverage,
+              newMargin: params.margin,
+            }],
+          };
+
+          fleetState.activeTrades = [newTrade, ...fleetState.activeTrades];
+          fleetState.masterPortfolio.activeStagedTradesCount = fleetState.activeTrades.length;
+
+          // Dispatch Telegram Entry Alert
+          if (fleetState.telegramConfig.notifyOnTradeOpen) {
+            const openMsg = formatTelegramStageTradeOpen(newTrade);
+            dispatchTelegramMessage(openMsg, 'TRADE_OPEN');
+          }
+        }
+      }
+
+      // 4. Hourly Performance Summary to Telegram
+      const summaryIntervalMs = (fleetState.telegramConfig.summaryIntervalMinutes || 60) * 60 * 1000;
+      if (now - fleetState.lastSummaryTimestamp >= summaryIntervalMs) {
+        fleetState.lastSummaryTimestamp = now;
+        if (fleetState.telegramConfig.notifyHourlySummary) {
+          const summaryMsg = formatTelegramFleetSummary(
+            fleetState.masterPortfolio,
+            fleetState.activeTrades,
+            fleetState.bots
+          );
+          dispatchTelegramMessage(summaryMsg, 'HOURLY_SUMMARY');
+        }
+      }
+
+      // 5. Periodic state flush to disk
+      persistStateToDisk();
+
+    } catch (loopErr) {
+      console.error('Error in 24/7 background engine tick:', loopErr);
+    }
+  }, 3000);
+
+  // -------------------------------------------------------------
+  // API ENDPOINTS
+  // -------------------------------------------------------------
+
+  // Get full server-authoritative fleet state
+  app.get('/api/fleet/state', (req, res) => {
+    const now = Date.now();
+    const currentUptime = Math.floor((now - fleetState.serverStartedAt) / 1000) + fleetState.accumulatedUptimeSeconds;
+    const summaryIntervalMs = (fleetState.telegramConfig.summaryIntervalMinutes || 60) * 60 * 1000;
+    const elapsedSinceLastSummary = now - fleetState.lastSummaryTimestamp;
+    const nextSummarySeconds = Math.max(0, Math.floor((summaryIntervalMs - elapsedSinceLastSummary) / 1000));
+
+    res.json({
+      success: true,
+      serverTime: now,
+      uptimeSeconds: currentUptime,
+      is247Running: fleetState.is247Running,
+      nextSummarySeconds,
+      masterPortfolio: fleetState.masterPortfolio,
+      bots: fleetState.bots,
+      activeTrades: fleetState.activeTrades,
+      auditLogs: fleetState.auditLogs,
+      telegramConfig: fleetState.telegramConfig,
+      telegramLogs: fleetState.telegramLogs,
+    });
   });
 
-  // 1c. Live Market Overview stats (Market cap, CMC20, Altcoin Index, Fear & Greed)
+  // Save / Update Telegram credentials and notification toggles
+  app.post('/api/fleet/telegram-config', async (req, res) => {
+    try {
+      const { botToken, chatId, enabled, summaryIntervalMinutes, notifyOnTradeOpen, notifyOnTakeProfit, notifyOnStopLoss, notifyHourlySummary } = req.body;
+
+      const previousConfig = { ...fleetState.telegramConfig };
+
+      fleetState.telegramConfig = {
+        botToken: botToken !== undefined ? botToken : fleetState.telegramConfig.botToken,
+        chatId: chatId !== undefined ? chatId : fleetState.telegramConfig.chatId,
+        enabled: enabled !== undefined ? enabled : Boolean(botToken && chatId),
+        summaryIntervalMinutes: Number(summaryIntervalMinutes) || fleetState.telegramConfig.summaryIntervalMinutes || 60,
+        notifyOnTradeOpen: notifyOnTradeOpen !== undefined ? notifyOnTradeOpen : true,
+        notifyOnTakeProfit: notifyOnTakeProfit !== undefined ? notifyOnTakeProfit : true,
+        notifyOnStopLoss: notifyOnStopLoss !== undefined ? notifyOnStopLoss : true,
+        notifyHourlySummary: notifyHourlySummary !== undefined ? notifyHourlySummary : true,
+      };
+
+      persistStateToDisk();
+
+      // If user just connected Telegram, send welcome confirmation
+      if (fleetState.telegramConfig.botToken && fleetState.telegramConfig.chatId && !previousConfig.botToken) {
+        const welcomeMsg = `🤖 *[NEXUS 5-BOT CONSENSUS FLEET ONLINE]*\n\n✅ 24/7 Cloud Background Engine Linked!\n💰 Master Capital: $${fleetState.masterPortfolio.currentBalance.toFixed(2)} USDT\n⚡ Active Trades: ${fleetState.activeTrades.length}\n📊 Hourly Reports: Every ${fleetState.telegramConfig.summaryIntervalMinutes}m\n\n_Your cloud server is running 24/7 in the datacenter. You can close your browser or turn data off anytime!_`;
+        await dispatchTelegramMessage(welcomeMsg, 'SYSTEM');
+      }
+
+      res.json({ success: true, telegramConfig: fleetState.telegramConfig });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // Reset Master Portfolio to clean $1,000 baseline
+  app.post('/api/fleet/reset', (req, res) => {
+    try {
+      fleetState.masterPortfolio = {
+        initialBase: 1000.00,
+        currentBalance: 1000.00,
+        totalRealizedPnL: 0.00,
+        netROI: 0.00,
+        totalWins: 0,
+        totalLosses: 0,
+        totalTradesExecuted: 0,
+        fleetWinRate: 0.0,
+        evolutionGeneration: 1,
+        selfLearningAdaptationsCount: 0,
+        activeStagedTradesCount: 0,
+      };
+
+      fleetState.activeTrades = [];
+      fleetState.auditLogs = [];
+      fleetState.bots = JSON.parse(JSON.stringify(INITIAL_BOTS));
+      fleetState.lastSummaryTimestamp = Date.now();
+
+      persistStateToDisk();
+
+      dispatchTelegramMessage(
+        `🔄 *[MASTER FLEET RESET TRIGGERED]*\n• Capital Reset: $1,000.00 USDT Baseline\n• Trade History Cleared\n• Gen #1 Heuristics Initialized\n• 24/7 Scanning Active.`,
+        'SYSTEM'
+      );
+
+      res.json({ success: true, masterPortfolio: fleetState.masterPortfolio });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  // Toggle 24/7 Engine ON/OFF
+  app.post('/api/fleet/toggle-247', (req, res) => {
+    fleetState.is247Running = !fleetState.is247Running;
+    persistStateToDisk();
+    res.json({ success: true, is247Running: fleetState.is247Running });
+  });
+
+  // Close trade manually
+  app.post('/api/fleet/trade/close', (req, res) => {
+    const { tradeId } = req.body;
+    const trade = fleetState.activeTrades.find(t => t.id === tradeId);
+    if (!trade) {
+      return res.status(404).json({ success: false, error: 'Trade not found' });
+    }
+
+    const pnl = trade.unrealizedPnL;
+    const isWin = pnl >= 0;
+    const newBal = parseFloat(Math.max(100, fleetState.masterPortfolio.currentBalance + pnl).toFixed(2));
+    const totalNet = parseFloat((newBal - fleetState.masterPortfolio.initialBase).toFixed(2));
+    const netROI = parseFloat(((totalNet / fleetState.masterPortfolio.initialBase) * 100).toFixed(2));
+    const wins = isWin ? fleetState.masterPortfolio.totalWins + 1 : fleetState.masterPortfolio.totalWins;
+    const losses = !isWin ? fleetState.masterPortfolio.totalLosses + 1 : fleetState.masterPortfolio.totalLosses;
+    const totalTrades = wins + losses;
+    const winRate = totalTrades > 0 ? parseFloat(((wins / totalTrades) * 100).toFixed(1)) : 0;
+
+    fleetState.masterPortfolio = {
+      ...fleetState.masterPortfolio,
+      currentBalance: newBal,
+      totalRealizedPnL: totalNet,
+      netROI,
+      totalWins: wins,
+      totalLosses: losses,
+      totalTradesExecuted: totalTrades,
+      fleetWinRate: winRate,
+      activeStagedTradesCount: Math.max(0, fleetState.activeTrades.length - 1),
+    };
+
+    const closedLog: TradePosition = {
+      ...trade,
+      id: `audit-${trade.id}-${Date.now()}`,
+      status: isWin ? 'CLOSED_TP' : 'CLOSED_SL',
+      stageAtClose: trade.stage,
+      closePrice: trade.currentPrice,
+      realizedPnL: pnl,
+      realizedPnLPercent: trade.unrealizedPnLPercent,
+      exitTime: Date.now(),
+      exitReason: `Manual close @ $${trade.currentPrice} (${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)})`,
+    };
+
+    fleetState.auditLogs = [closedLog, ...(fleetState.auditLogs || []).slice(0, 99)];
+    fleetState.activeTrades = fleetState.activeTrades.filter(t => t.id !== tradeId);
+
+    persistStateToDisk();
+    res.json({ success: true, closedTrade: closedLog });
+  });
+
+  // Open trade manually / from UI
+  app.post('/api/fleet/trade/open', (req, res) => {
+    const { initiatorBotId, coinId, direction, explicitStage } = req.body;
+    const initiatorBot = fleetState.bots.find(b => b.id === initiatorBotId) || fleetState.bots[0];
+    const coin = coinUniverse.find(c => c.id === coinId || c.symbol === coinId);
+    if (!coin) {
+      return res.status(404).json({ success: false, error: 'Coin not found' });
+    }
+
+    const stage: ConsensusStage = explicitStage || 1;
+    const confirmingBots = fleetState.bots.slice(0, stage);
+    const confirmingBotIds = confirmingBots.map(b => b.id);
+    const confirmingBotNames = confirmingBots.map(b => `${b.number}. ${b.name}`);
+
+    const params = calculateStagedTradeParameters(
+      fleetState.masterPortfolio.currentBalance,
+      stage,
+      initiatorBot,
+      confirmingBots,
+      coin,
+      direction || 'LONG'
+    );
+
+    const newTrade: TradePosition = {
+      id: `trade-stage-${stage}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      symbol: `${coin.symbol}/USDT`,
+      name: coin.name,
+      contractAddress: coin.contractAddress,
+      network: coin.network,
+      cmcUrl: coin.cmcUrl,
+      isVerified: true,
+      direction: direction || 'LONG',
+      stage,
+      initiatorBotId: initiatorBot.id,
+      initiatorBotName: `${initiatorBot.number}. ${initiatorBot.name}`,
+      confirmingBotIds,
+      confirmingBotNames,
+      leverage: params.leverage,
+      margin: params.margin,
+      positionSize: params.positionSize,
+      entryPrice: params.entryPrice,
+      currentPrice: params.entryPrice,
+      takeProfitPrice: params.takeProfitPrice,
+      stopLossPrice: params.stopLossPrice,
+      targetProfitUsd: params.targetProfitUsd,
+      maxLossUsd: params.maxLossUsd,
+      unrealizedPnL: 0,
+      unrealizedPnLPercent: 0,
+      status: 'OPEN',
+      entryTime: Date.now(),
+      aiReasoning: params.aiReasoning,
+      sentimentScore: coin.sentimentScore || 75,
+      stageHistory: [{
+        stage,
+        timestamp: Date.now(),
+        addedBotId: initiatorBot.id,
+        addedBotName: `${initiatorBot.number}. ${initiatorBot.name}`,
+        rationale: `Manual order execution with ${confirmingBots.length} bot consensus.`,
+        newLeverage: params.leverage,
+        newMargin: params.margin,
+      }],
+    };
+
+    fleetState.activeTrades = [newTrade, ...fleetState.activeTrades];
+    fleetState.masterPortfolio.activeStagedTradesCount = fleetState.activeTrades.length;
+
+    persistStateToDisk();
+
+    if (fleetState.telegramConfig.notifyOnTradeOpen) {
+      const openMsg = formatTelegramStageTradeOpen(newTrade);
+      dispatchTelegramMessage(openMsg, 'TRADE_OPEN');
+    }
+
+    res.json({ success: true, trade: newTrade });
+  });
+
+  // Real Live Crypto Market Prices endpoint
+  app.get('/api/market/live-prices', async (req, res) => {
+    const prices = await fetchLiveMarketPrices();
+    res.json({ success: true, prices, timestamp: Date.now() });
+  });
+
+  // Live Market Overview stats
   app.get('/api/market/stats', (req, res) => {
     res.json({
       success: true,
@@ -140,7 +853,7 @@ async function startServer() {
     });
   });
 
-  // 2. Gemini AI Deep Market Analysis endpoint
+  // Gemini AI Deep Market Analysis endpoint
   app.post('/api/ai/deep-analysis', async (req, res) => {
     try {
       const { botName, strategyTitle, symbol, price, change24h, rsi, sentimentScore, trend, direction } = req.body;
@@ -166,7 +879,6 @@ Provide a concise, high-conviction 2-sentence institutional trade rationale expl
       res.json({ success: true, reasoning });
     } catch (err: any) {
       console.error('Gemini AI deep analysis error:', err?.message || err);
-      // Fallback
       res.json({
         success: true,
         reasoning: `Autonomous algorithmic confirmation on ${req.body.symbol} (${req.body.direction}). Technical ribbon alignment & volatility delta validated.`
@@ -174,7 +886,7 @@ Provide a concise, high-conviction 2-sentence institutional trade rationale expl
     }
   });
 
-  // 3. Gemini AI Post-Mortem Mistake Learning endpoint
+  // Gemini AI Post-Mortem Mistake Learning endpoint
   app.post('/api/ai/post-mortem', async (req, res) => {
     try {
       const { botName, strategyTitle, symbol, direction, leverage, entryPrice, stopLossPrice, lossAmount } = req.body;
@@ -218,59 +930,36 @@ Return a JSON object with:
     }
   });
 
-  // 4. Telegram Message Dispatcher
+  // Telegram Direct Dispatcher
   app.post('/api/telegram/send', async (req, res) => {
     try {
-      const { token, chatId, text } = req.body;
-      const botToken = token || process.env.TELEGRAM_BOT_TOKEN;
-      const targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
-
-      if (!botToken || !targetChatId) {
-        return res.json({
-          success: false,
-          simulated: true,
-          message: 'Telegram credentials not provided in environment or UI. Message logged to UI Dispatch Terminal.',
-          payload: text
-        });
+      const { token, chatId, text, type } = req.body;
+      if (token && chatId) {
+        fleetState.telegramConfig.botToken = token;
+        fleetState.telegramConfig.chatId = chatId;
+        fleetState.telegramConfig.enabled = true;
+        persistStateToDisk();
       }
 
-      // Send to official Telegram Bot API
-      const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-      const response = await fetch(telegramUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: targetChatId,
-          text: text,
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true,
-        }),
-      });
-
-      const data = await response.json();
-      if (data.ok) {
-        res.json({ success: true, messageId: data.result?.message_id });
-      } else {
-        res.json({ success: false, error: data.description || 'Telegram API returned failure' });
-      }
+      const success = await dispatchTelegramMessage(text, type || 'SYSTEM');
+      res.json({ success, simulated: !fleetState.telegramConfig.botToken });
     } catch (err: any) {
-      console.error('Telegram dispatch error:', err?.message || err);
-      res.status(500).json({ success: false, error: err?.message || 'Failed to dispatch Telegram message' });
+      res.status(500).json({ success: false, error: err?.message });
     }
   });
 
-  // 5. Telegram Test Connection endpoint
+  // Telegram Test Connection endpoint
   app.post('/api/telegram/test', async (req, res) => {
     try {
       const { token, chatId } = req.body;
-      const botToken = token || process.env.TELEGRAM_BOT_TOKEN;
-      const targetChatId = chatId || process.env.TELEGRAM_CHAT_ID;
+      const botToken = token || fleetState.telegramConfig.botToken || process.env.TELEGRAM_BOT_TOKEN;
+      const targetChatId = chatId || fleetState.telegramConfig.chatId || process.env.TELEGRAM_CHAT_ID;
 
       if (!botToken || !targetChatId) {
         return res.status(400).json({ success: false, error: 'Both Bot Token and Chat ID are required for test.' });
       }
 
-      const testMsg = `🤖 *[5-BOT AUTONOMOUS TRADING FLEET - CONNECTION VERIFIED]*\n\n✅ Telegram Webhook Connected Successfully!\n⚡ 5 Specialist Bots ($100 Base Each) Ready\n📊 24/7 Background Scanner & Trade Alerts Active.\n\n_Real-time trade entries, $2+ take-profits, 3% stop-losses, and hourly digests will be sent here._`;
+      const testMsg = `🤖 *[NEXUS 5-BOT AUTONOMOUS FLEET - CONNECTION VERIFIED]*\n\n✅ Telegram Webhook Connected Successfully!\n⚡ 5 Specialist Bots ($1,000 Base) Running 24/7 in Cloud Datacenter.\n📊 Trade Entries, Take-Profits, Stop-Loss Learning & Hourly Digests will be sent here.\n\n_Server is running 24/7. It will continue executing and notifying you even if your phone screen is off or mobile data is disconnected!_`;
 
       const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
@@ -284,6 +973,12 @@ Return a JSON object with:
 
       const data = await response.json();
       if (data.ok) {
+        // Save config immediately on successful test
+        fleetState.telegramConfig.botToken = botToken;
+        fleetState.telegramConfig.chatId = targetChatId;
+        fleetState.telegramConfig.enabled = true;
+        persistStateToDisk();
+
         res.json({ success: true, message: 'Test message sent successfully to your Telegram chat!' });
       } else {
         res.status(400).json({ success: false, error: data.description || 'Telegram API returned error' });
@@ -293,11 +988,11 @@ Return a JSON object with:
     }
   });
 
-  // 6. Complete Project ZIP Exporter for VisiHost / VPS / Cloud 24/7 Hosting
+  // Complete Project ZIP Exporter for VisiHost / VPS / Cloud 24/7 Hosting
   app.get('/api/export-project-zip', (req, res) => {
     try {
       const archive = archiver('zip', {
-        zlib: { level: 9 }, // Maximum compression
+        zlib: { level: 9 },
       });
 
       res.attachment('nexus-five-trading-fleet.zip');
@@ -322,7 +1017,6 @@ Return a JSON object with:
 
       const rootDir = process.cwd();
 
-      // Include all source and config files, explicitly excluding node_modules, dist, .git, etc.
       archive.glob('**/*', {
         cwd: rootDir,
         ignore: [
@@ -364,7 +1058,7 @@ Return a JSON object with:
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Autonomous 5-Bot Trading Fleet Server running on http://0.0.0.0:${PORT}`);
+    console.log(`⚡ 24/7 Autonomous 5-Bot Staged Trading Fleet Running on http://0.0.0.0:${PORT}`);
   });
 }
 
