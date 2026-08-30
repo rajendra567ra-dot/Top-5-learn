@@ -247,27 +247,45 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Financial Metrics Grid */}
-                  <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-3 gap-2.5 font-mono text-xs">
+                  {/* Financial Metrics Grid: Entry/Mark, Live PnL & ROI %, Dedicated Stop-Loss Guard */}
+                  <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono text-xs">
+                    {/* 1. Margin & Active Position */}
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] text-slate-400 uppercase">Margin / Active</div>
+                      <div className="text-[10px] text-slate-400 uppercase font-bold">Margin / Size</div>
                       <div className="text-slate-900 font-bold mt-0.5">${(trade.remainingMargin || trade.margin).toFixed(2)}</div>
                       <div className="text-[10px] text-slate-500">Size: ${((trade.remainingMargin || trade.margin) * trade.leverage).toFixed(2)}</div>
                     </div>
 
+                    {/* 2. Entry & Current Mark */}
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] text-slate-400 uppercase">Entry / Mark</div>
+                      <div className="text-[10px] text-slate-400 uppercase font-bold">Entry / Mark</div>
                       <div className="text-slate-900 font-bold mt-0.5">${trade.entryPrice}</div>
-                      <div className="text-blue-600 font-bold">${trade.currentPrice}</div>
+                      <div className="text-blue-600 font-bold mt-0.5">${trade.currentPrice}</div>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 col-span-2 sm:col-span-1">
-                      <div className="text-[10px] text-slate-400 uppercase">Unrealized / Harvested</div>
-                      <div className={`font-bold mt-0.5 ${pnlIsPos ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {/* 3. Stop-Loss (SL) Dedicated Guard Card */}
+                    <div className="p-2.5 rounded-xl bg-rose-50/60 border border-rose-200">
+                      <div className="flex items-center justify-between text-[10px] text-rose-700 uppercase font-bold">
+                        <span className="flex items-center gap-1">
+                          <ShieldAlert className="w-3 h-3 text-rose-600" /> Stop-Loss (SL)
+                        </span>
+                      </div>
+                      <div className="text-rose-700 font-black mt-0.5">${trade.stopLossPrice}</div>
+                      <div className="text-[10px] text-rose-600 font-medium">
+                        {trade.slMode === 'BREAKEVEN' ? '🛡️ 100% Risk-Free' : trade.slMode === 'TRAILING_STRUCTURE' ? '⚡ Trailing' : `Max -$${trade.maxLossUsd?.toFixed(2) || '2.50'}`}
+                      </div>
+                    </div>
+
+                    {/* 4. Live PnL & PnL Percentage (%) */}
+                    <div className={`p-2.5 rounded-xl border ${
+                      pnlIsPos ? 'bg-emerald-50/80 border-emerald-200' : 'bg-rose-50/80 border-rose-200'
+                    }`}>
+                      <div className="text-[10px] text-slate-400 uppercase font-bold">Live PnL & ROI %</div>
+                      <div className={`text-sm font-black mt-0.5 ${pnlIsPos ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {pnlIsPos ? '+' : ''}${trade.unrealizedPnL.toFixed(2)}
                       </div>
-                      <div className="text-[10px] font-bold text-emerald-600">
-                        Booked: +${(trade.totalBookedPnL || 0).toFixed(2)}
+                      <div className={`text-[11px] font-bold ${pnlIsPos ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {pnlIsPos ? '+' : ''}{(trade.unrealizedPnLPercent !== undefined ? trade.unrealizedPnLPercent : ((trade.unrealizedPnL / (trade.remainingMargin || trade.margin || 1)) * 100)).toFixed(2)}% ROI
                       </div>
                     </div>
                   </div>

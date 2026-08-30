@@ -19,7 +19,7 @@ import {
 } from './src/types';
 import { INITIAL_BOTS } from './src/data/initialBots';
 import { INITIAL_ACTIVE_TRADES, INITIAL_AUDIT_LOGS } from './src/data/initialTrades';
-import { generateTop500Universe } from './src/data/topCoins';
+import { generateTop500Universe, isHighDecimalOrBlacklistedCoin } from './src/data/topCoins';
 import { 
   STAGE_CONFIGS,
   calculateStagedTradeParameters, 
@@ -63,6 +63,23 @@ const INITIAL_MASTER_PORTFOLIO: MasterPortfolio = {
   activeStagedTradesCount: 0,
 };
 
+function sanitizeTradesList(trades: any[]): TradePosition[] {
+  if (!Array.isArray(trades)) return [];
+  const sanitized: TradePosition[] = [];
+  const seenSymbols = new Set<string>();
+
+  for (const t of trades) {
+    if (!t || !t.symbol) continue;
+    const cleanSym = t.symbol.replace('/USDT', '').replace('USDT', '').trim().toUpperCase();
+    if (isHighDecimalOrBlacklistedCoin(cleanSym, t.entryPrice || t.currentPrice)) continue;
+    if ((t.entryPrice && t.entryPrice < 0.01) || (t.currentPrice && t.currentPrice < 0.01)) continue;
+    if (seenSymbols.has(cleanSym)) continue;
+    seenSymbols.add(cleanSym);
+    sanitized.push(t);
+  }
+  return sanitized;
+}
+
 function loadPersistedState(): ServerFleetState {
   try {
     if (fs.existsSync(STATE_FILE_PATH)) {
@@ -71,14 +88,24 @@ function loadPersistedState(): ServerFleetState {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.masterPortfolio) {
           console.log('⚡ Loaded persistent 24/7 fleet state from disk.');
+          const cleanedActiveTrades = sanitizeTradesList(parsed.activeTrades || []);
+          const cleanedAuditLogs = Array.isArray(parsed.auditLogs)
+            ? parsed.auditLogs.filter((t: any) => !isHighDecimalOrBlacklistedCoin(t?.symbol || '', t?.entryPrice))
+            : INITIAL_AUDIT_LOGS;
+
+          const masterPortfolio = {
+            ...(parsed.masterPortfolio || INITIAL_MASTER_PORTFOLIO),
+            activeStagedTradesCount: cleanedActiveTrades.length,
+          };
+
           return {
             serverStartedAt: parsed.serverStartedAt || Date.now(),
             accumulatedUptimeSeconds: parsed.accumulatedUptimeSeconds || 0,
             is247Running: parsed.is247Running !== undefined ? parsed.is247Running : true,
-            masterPortfolio: parsed.masterPortfolio || INITIAL_MASTER_PORTFOLIO,
+            masterPortfolio,
             bots: parsed.bots && parsed.bots.length > 0 ? parsed.bots : INITIAL_BOTS,
-            activeTrades: Array.isArray(parsed.activeTrades) ? parsed.activeTrades : INITIAL_ACTIVE_TRADES,
-            auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : INITIAL_AUDIT_LOGS,
+            activeTrades: cleanedActiveTrades,
+            auditLogs: cleanedAuditLogs,
             telegramConfig: parsed.telegramConfig || {
               botToken: process.env.TELEGRAM_BOT_TOKEN || '',
               chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -108,7 +135,7 @@ function loadPersistedState(): ServerFleetState {
     is247Running: true,
     masterPortfolio: { ...INITIAL_MASTER_PORTFOLIO },
     bots: JSON.parse(JSON.stringify(INITIAL_BOTS)),
-    activeTrades: [...INITIAL_ACTIVE_TRADES],
+    activeTrades: sanitizeTradesList(INITIAL_ACTIVE_TRADES),
     auditLogs: [...INITIAL_AUDIT_LOGS],
     telegramConfig: {
       botToken: process.env.TELEGRAM_BOT_TOKEN || '',
@@ -230,11 +257,11 @@ async function startServer() {
         SUI: { price: 2.45, change24h: 3.20, volume24h: 1900000000, high24h: 2.58, low24h: 2.38 },
         LINK: { price: 14.60, change24h: -1.40, volume24h: 520000000, high24h: 15.10, low24h: 14.40 },
         NEAR: { price: 3.85, change24h: -1.90, volume24h: 480000000, high24h: 3.98, low24h: 3.79 },
-        KAS: { price: 0.02789, change24h: -3.99, volume24h: 7840000, high24h: 0.02848, low24h: 0.02755 },
+        KAS: { price: 0.1245, change24h: -2.15, volume24h: 48000000, high24h: 0.1310, low24h: 0.1220 },
         FIL: { price: 0.6836, change24h: -2.52, volume24h: 53330000, high24h: 0.6959, low24h: 0.6777 },
         CRV: { price: 0.3420, change24h: -1.85, volume24h: 48000000, high24h: 0.3550, low24h: 0.3380 },
-        PEPE: { price: 0.0000084, change24h: -4.20, volume24h: 1800000000, high24h: 0.0000091, low24h: 0.0000081 },
-        SHIB: { price: 0.0000142, change24h: -2.10, volume24h: 740000000, high24h: 0.0000148, low24h: 0.0000139 },
+        AR: { price: 12.80, change24h: -2.40, volume24h: 45000000, high24h: 13.20, low24h: 12.50 },
+        AERO: { price: 0.85, change24h: 3.40, volume24h: 58000000, high24h: 0.89, low24h: 0.82 },
         RENDER: { price: 4.65, change24h: 1.80, volume24h: 390000000, high24h: 4.82, low24h: 4.55 },
         TAO: { price: 385.00, change24h: -0.90, volume24h: 280000000, high24h: 395.00, low24h: 380.00 },
         FET: { price: 0.985, change24h: 2.40, volume24h: 410000000, high24h: 1.04, low24h: 0.96 },
@@ -680,11 +707,17 @@ async function startServer() {
         fleetState.lastScanTimestamp = now;
 
         // Find candidate coins not currently active
-        const activeSymbols = new Set(fleetState.activeTrades.map(t => t.symbol.split('/')[0]));
+        const activeSymbols = new Set(
+          fleetState.activeTrades.map(t => t.symbol.replace('/USDT', '').replace('USDT', '').trim().toUpperCase())
+        );
         
         // ULTRA-STRICT FILTER: High conviction setup screening (Bots don't take trades easily!)
+        // Excludes meme coins, micro-decimal coins (<$0.01), and assets currently open
         const strictCandidates = coinUniverse.filter(c => {
-          if (activeSymbols.has(c.symbol)) return false;
+          const cleanSym = c.symbol.replace('/USDT', '').replace('USDT', '').trim().toUpperCase();
+          if (activeSymbols.has(cleanSym)) return false;
+          if (isHighDecimalOrBlacklistedCoin(cleanSym, c.price)) return false;
+          if (c.price < 0.01) return false;
           
           const rsi = c.rsi || 50;
           const vol = Number(c.volatility) || 5;
@@ -694,7 +727,7 @@ async function startServer() {
           const rsiStrict = (rsi <= 38) || (rsi >= 62) || (rsi >= 54 && rsi <= 66 && c.macd === 'BULLISH_CROSS');
           // Criteria 2: Sufficient volatility (reject flat/dead noise)
           const volStrict = vol >= 2.5 && vol <= 14.0;
-          // Criteria 3: High sentiment conviction
+          // Criteria 3: High sentiment conviction (minimum 45+ absolute score)
           const sentimentStrict = sentiment >= 45;
 
           return rsiStrict && volStrict && sentimentStrict;
