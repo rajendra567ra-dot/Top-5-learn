@@ -57,6 +57,14 @@ export interface StageUpgradeRecord {
   newMargin: number;
 }
 
+export interface TeacherExplanation {
+  setupHeadline: string;
+  macroContext: string;
+  technicalConfluence: string[];
+  riskPlan: string;
+  consensusWhy: string;
+}
+
 export interface TradePosition {
   id: string;
   symbol: string;
@@ -68,12 +76,40 @@ export interface TradePosition {
   confirmingBotIds: string[]; // List of bot IDs that agreed & confirmed this trade
   confirmingBotNames: string[];
   leverage: number; // Dynamic leverage based on stage & conviction (e.g. 5x - 25x)
-  margin: number; // Dynamic margin from master $1000 portfolio
+  margin: number; // Initial total margin from master $1000 portfolio
+  remainingMargin: number; // Active margin remaining (after partial TPs)
   positionSize: number; // margin * leverage
   entryPrice: number;
   currentPrice: number;
-  takeProfitPrice: number; // dynamically calculated for profit target
-  stopLossPrice: number; // dynamically calculated for risk cap
+  initialStopLossPrice: number; // Original hard SL price
+  stopLossPrice: number; // Current active SL (Breakeven at TP1, TP1 price at TP2, TP2 at TP3, trailing structure)
+  slMode: 'INITIAL' | 'BREAKEVEN' | 'LOCKED_TP1' | 'LOCKED_TP2' | 'TRAILING_STRUCTURE';
+
+  // Multi-tier TP Targets
+  tp1Price: number;
+  tp1Hit: boolean;
+  tp1HitTime?: number;
+  tp1BookedPnL?: number; // 35% booked
+
+  tp2Price: number;
+  tp2Hit: boolean;
+  tp2HitTime?: number;
+  tp2BookedPnL?: number; // 25% booked
+
+  tp3Price: number;
+  tp3Hit: boolean;
+  tp3HitTime?: number;
+  tp3BookedPnL?: number; // 20% booked
+
+  runnerPercent: number; // 20%
+  runnerActive: boolean;
+  runnerBookedPnL?: number;
+  trailingStopPrice?: number;
+  structuralSupportPrice?: number;
+  structuralResistancePrice?: number;
+  totalBookedPnL: number; // Sum of partial booked profits
+
+  takeProfitPrice: number; // Full target/TP3 price for legacy compatibility
   targetProfitUsd: number;
   maxLossUsd: number;
   unrealizedPnL: number;
@@ -86,6 +122,7 @@ export interface TradePosition {
   realizedPnL?: number;
   realizedPnLPercent?: number;
   aiReasoning: string;
+  teacherExplanation?: TeacherExplanation;
   sentimentScore: number;
   mistakeAnalysis?: string;
   exitReason?: string;

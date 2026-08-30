@@ -16,7 +16,9 @@ import {
   TrendingUp,
   TrendingDown,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  GraduationCap,
+  ChevronDown
 } from 'lucide-react';
 import { TradePosition, ConsensusStage, TradingBot } from '../types';
 import { STAGE_CONFIGS } from '../services/tradingEngine';
@@ -38,6 +40,7 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
 }) => {
   const [selectedStageFilter, setSelectedStageFilter] = useState<ConsensusStage | 'ALL'>('ALL');
   const [expandedTimelineTradeId, setExpandedTimelineTradeId] = useState<string | null>(null);
+  const [expandedTeacherTradeId, setExpandedTeacherTradeId] = useState<string | null>(null);
 
   const filteredTrades = selectedStageFilter === 'ALL'
     ? activeTrades
@@ -61,14 +64,14 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2 font-sans">
                 <Activity className="w-5 h-5 text-emerald-600" />
-                Live Trades Dashboard (Stage-Wise Consensus)
+                Live Trades Dashboard (Stage Consensus & Multi-TP Blueprint)
               </h2>
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono">
                 {activeTrades.length} Active Positions
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-              Each live position reflects the number of confirming bots. Example: <em>Stage 4 SHORT BTC</em> (4 Bots confirmed), <em>Stage 3 LONG SOL</em> (3 Bots confirmed). Leverage and capital dynamically scale with consensus level.
+              Execution architecture: <strong>TP1 (35% + Breakeven SL)</strong>, <strong>TP2 (25% + TP1 Lock)</strong>, <strong>TP3 (20% + TP2 Lock)</strong>, and <strong>20% Runner (Trailing S/R)</strong>. No position limits.
             </p>
           </div>
 
@@ -140,7 +143,7 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
           <Activity className="w-12 h-12 text-slate-300 mx-auto mb-3 animate-pulse" />
           <h3 className="text-base font-bold text-slate-700">No Active Trades in Stage {selectedStageFilter}</h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-            The autonomous consensus scanner continuously tracks market setups and promotes positions as new bots confirm the directional trend.
+            The ultra-strict autonomous consensus scanner continuously screens the market and executes high-conviction entries with multi-tier TP blueprints.
           </p>
         </div>
       ) : (
@@ -159,6 +162,7 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
             const progressPercent = Math.min(100, Math.max(0, (currentDist / Math.max(0.0001, totalRange)) * 100));
 
             const isTimelineExpanded = expandedTimelineTradeId === trade.id;
+            const isTeacherExpanded = expandedTeacherTradeId === trade.id;
 
             return (
               <div
@@ -179,9 +183,18 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                           STAGE {trade.stage} ENTRY ({trade.confirmingBotIds.length} BOTS CONFIRMED)
                         </span>
 
-                        <span className="text-xs text-slate-400 font-mono">
-                          Initiated by: <strong className="text-slate-700">{trade.initiatorBotName}</strong>
-                        </span>
+                        {trade.slMode && trade.slMode !== 'INITIAL' && (
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black font-mono flex items-center gap-1 ${
+                            trade.slMode === 'BREAKEVEN' 
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : trade.slMode === 'TRAILING_STRUCTURE'
+                                ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                                : 'bg-blue-100 text-blue-800 border border-blue-300'
+                          }`}>
+                            <ShieldCheck className="w-3 h-3" />
+                            {trade.slMode === 'BREAKEVEN' ? '100% Risk-Free Breakeven' : trade.slMode.replace('_', ' ')}
+                          </span>
+                        )}
                       </div>
 
                       <div className="text-lg font-black text-slate-900 flex items-center gap-2 mt-1 font-mono">
@@ -196,7 +209,7 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                           Verified
                         </span>
                         {trade.network && (
-                          <span className="text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded text-[10px]" title={trade.contractAddress}>
+                          <span className="text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">
                             {trade.network}
                           </span>
                         )}
@@ -206,7 +219,7 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-800 underline inline-flex items-center gap-0.5 text-[10px]"
-                            title="Verify coin contract & real-time price on CoinMarketCap"
+                            title="Verify coin contract on CoinMarketCap"
                           >
                             CMC <ExternalLink className="w-2.5 h-2.5" />
                           </a>
@@ -234,39 +247,12 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Confirming Bots Badges Row */}
-                  <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <div className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1 mb-1.5">
-                      <Users className="w-3 h-3 text-slate-500" />
-                      Active Consensus Brains ({trade.confirmingBotNames.length}/5):
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {trade.confirmingBotNames.map((name, i) => (
-                        <span key={`${trade.id}-bot-${i}`} className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white text-slate-800 border border-slate-200 flex items-center gap-1 font-mono">
-                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                          {name}
-                        </span>
-                      ))}
-
-                      {!isMaxStage && onPromoteTradeStage && (
-                        <button
-                          onClick={() => onPromoteTradeStage(trade.id)}
-                          title="Simulate additional specialist bot confirmation and scale trade into next stage"
-                          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 flex items-center gap-1 transition-all cursor-pointer font-sans"
-                        >
-                          <Zap className="w-2.5 h-2.5 text-blue-600" />
-                          + Confirm Next Stage
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
                   {/* Financial Metrics Grid */}
                   <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-3 gap-2.5 font-mono text-xs">
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                      <div className="text-[10px] text-slate-400 uppercase">Stage Margin ($1K Base)</div>
-                      <div className="text-slate-900 font-bold mt-0.5">${trade.margin.toFixed(2)}</div>
-                      <div className="text-[10px] text-slate-500">Size: ${trade.positionSize.toFixed(2)} ({trade.leverage}x)</div>
+                      <div className="text-[10px] text-slate-400 uppercase">Margin / Active</div>
+                      <div className="text-slate-900 font-bold mt-0.5">${(trade.remainingMargin || trade.margin).toFixed(2)}</div>
+                      <div className="text-[10px] text-slate-500">Size: ${((trade.remainingMargin || trade.margin) * trade.leverage).toFixed(2)}</div>
                     </div>
 
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
@@ -276,59 +262,142 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                     </div>
 
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 col-span-2 sm:col-span-1">
-                      <div className="text-[10px] text-slate-400 uppercase">Unrealized PnL</div>
+                      <div className="text-[10px] text-slate-400 uppercase">Unrealized / Harvested</div>
                       <div className={`font-bold mt-0.5 ${pnlIsPos ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {pnlIsPos ? '+' : ''}${trade.unrealizedPnL.toFixed(2)}
                       </div>
-                      <div className={`text-[10px] font-bold ${pnlIsPos ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {pnlIsPos ? '+' : ''}{trade.unrealizedPnLPercent.toFixed(2)}% ROI
+                      <div className="text-[10px] font-bold text-emerald-600">
+                        Booked: +${(trade.totalBookedPnL || 0).toFixed(2)}
                       </div>
                     </div>
                   </div>
 
-                  {/* Risk Bar: Stop-Loss -> Mark -> Take-Profit */}
-                  <div className="mt-3.5 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <div className="flex items-center justify-between text-[11px] font-mono mb-1.5">
-                      <span className="text-rose-600 flex items-center gap-1 font-bold">
-                        <ShieldAlert className="w-3 h-3" />
-                        SL: ${trade.stopLossPrice} (-${trade.maxLossUsd.toFixed(2)})
+                  {/* MULTI-STAGE TAKE PROFIT BLUEPRINT */}
+                  <div className="mt-3.5 p-3 rounded-xl bg-slate-900 text-white font-mono text-xs">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-300 mb-2">
+                      <span className="flex items-center gap-1 text-amber-400 uppercase">
+                        <Target className="w-3.5 h-3.5 text-amber-400" />
+                        Multi-Tier Profit Blueprint
                       </span>
-                      <span className="text-emerald-600 flex items-center gap-1 font-bold">
-                        <Target className="w-3 h-3" />
-                        TP: ${trade.takeProfitPrice} (+${trade.targetProfitUsd.toFixed(2)})
+                      <span className="text-[10px] text-slate-400">
+                        Current SL: ${trade.stopLossPrice}
                       </span>
                     </div>
 
-                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden relative">
-                      <div 
-                        className={`h-full transition-all duration-500 rounded-full ${
-                          pnlIsPos ? 'bg-emerald-500' : 'bg-rose-500'
-                        }`}
-                        style={{ width: `${progressPercent}%` }}
-                      />
-                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+                      {/* TP 1 */}
+                      <div className={`p-2 rounded-lg border ${
+                        trade.tp1Hit 
+                          ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300' 
+                          : 'bg-slate-800/90 border-slate-700 text-slate-300'
+                      }`}>
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-bold">TP 1 (35%)</span>
+                          {trade.tp1Hit && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                        </div>
+                        <div className="font-bold text-white mt-0.5">${trade.tp1Price || trade.takeProfitPrice}</div>
+                        <div className="text-[9px] text-slate-400 mt-0.5">SL ➔ Breakeven</div>
+                      </div>
 
-                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                      <span>Consensus Stage {trade.stage} Guard</span>
-                      <span className="text-emerald-700 font-medium">Auto Staged Target Scaling Active</span>
+                      {/* TP 2 */}
+                      <div className={`p-2 rounded-lg border ${
+                        trade.tp2Hit 
+                          ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300' 
+                          : 'bg-slate-800/90 border-slate-700 text-slate-300'
+                      }`}>
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-bold">TP 2 (25%)</span>
+                          {trade.tp2Hit && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                        </div>
+                        <div className="font-bold text-white mt-0.5">${trade.tp2Price || (trade.takeProfitPrice * 1.01).toFixed(4)}</div>
+                        <div className="text-[9px] text-slate-400 mt-0.5">SL ➔ TP1 Level</div>
+                      </div>
+
+                      {/* TP 3 */}
+                      <div className={`p-2 rounded-lg border ${
+                        trade.tp3Hit 
+                          ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300' 
+                          : 'bg-slate-800/90 border-slate-700 text-slate-300'
+                      }`}>
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-bold">TP 3 (20%)</span>
+                          {trade.tp3Hit && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                        </div>
+                        <div className="font-bold text-white mt-0.5">${trade.tp3Price || (trade.takeProfitPrice * 1.02).toFixed(4)}</div>
+                        <div className="text-[9px] text-slate-400 mt-0.5">SL ➔ TP2 Level</div>
+                      </div>
+
+                      {/* Runner */}
+                      <div className={`p-2 rounded-lg border ${
+                        trade.runnerActive 
+                          ? 'bg-purple-950/80 border-purple-500/50 text-purple-300' 
+                          : 'bg-slate-800/90 border-slate-700 text-slate-400'
+                      }`}>
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-bold text-purple-300">Runner (20%)</span>
+                          {trade.runnerActive && <Zap className="w-3 h-3 text-purple-400 animate-pulse" />}
+                        </div>
+                        <div className="font-bold text-white mt-0.5">Trailing S/R</div>
+                        <div className="text-[9px] text-slate-400 mt-0.5">Swing Pivots</div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* AI Consensus Reasoning & Why Trade Was Taken */}
-                  <div className="mt-3 p-3.5 rounded-xl bg-purple-50 border border-purple-200 text-xs">
-                    <div className="flex items-center justify-between text-purple-700 font-bold mb-1.5">
-                      <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide">
-                        <BrainCircuit className="w-3.5 h-3.5 text-purple-600" />
-                        WHY FLEET TOOK THIS TRADE (STAGE {trade.stage} THESIS):
-                      </span>
-                      <span className="text-[10px] text-purple-600 font-mono">
-                        Sentiment: {trade.sentimentScore > 0 ? '+' : ''}{trade.sentimentScore}/100
-                      </span>
+                  {/* TEACHER-STYLE EXPLANATION DRAWER */}
+                  {trade.teacherExplanation ? (
+                    <div className="mt-3 p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs">
+                      <div className="flex items-center justify-between text-blue-900 font-bold mb-1.5">
+                        <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide">
+                          <GraduationCap className="w-4 h-4 text-blue-700" />
+                          Teacher Explanation: {trade.teacherExplanation.setupHeadline}
+                        </span>
+                        <button
+                          onClick={() => setExpandedTeacherTradeId(isTeacherExpanded ? null : trade.id)}
+                          className="text-blue-700 hover:text-blue-900 font-mono text-[10px] flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <span>{isTeacherExpanded ? 'Less' : 'More Details'}</span>
+                          <ChevronDown className={`w-3 h-3 transition-transform ${isTeacherExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+                      </div>
+
+                      <p className="text-slate-800 text-xs leading-relaxed font-sans bg-white/80 p-2.5 rounded-lg border border-blue-100">
+                        {trade.teacherExplanation.whyWeTookThisTrade}
+                      </p>
+
+                      {isTeacherExpanded && (
+                        <div className="mt-2 pt-2 border-t border-blue-200 space-y-2">
+                          <div className="bg-white/90 p-2.5 rounded-lg border border-blue-100">
+                            <div className="text-[10px] uppercase font-bold text-blue-800 mb-1">Technical Confluences:</div>
+                            <ul className="list-disc list-inside space-y-0.5 text-[11px] text-slate-700">
+                              {trade.teacherExplanation.technicalConfluence.map((conf, ci) => (
+                                <li key={ci}>{conf}</li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          <div className="bg-white/90 p-2.5 rounded-lg border border-blue-100 font-mono text-[10px] text-slate-700">
+                            <div className="uppercase font-bold text-blue-800 mb-1">Execution Rule:</div>
+                            <div>{trade.teacherExplanation.riskManagementPlan}</div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-slate-800 text-xs leading-relaxed font-sans bg-white/70 p-2.5 rounded-lg border border-purple-100">
-                      "{trade.aiReasoning}"
-                    </p>
-                  </div>
+                  ) : (
+                    <div className="mt-3 p-3.5 rounded-xl bg-purple-50 border border-purple-200 text-xs">
+                      <div className="flex items-center justify-between text-purple-700 font-bold mb-1.5">
+                        <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide">
+                          <BrainCircuit className="w-3.5 h-3.5 text-purple-600" />
+                          WHY FLEET TOOK THIS TRADE (STAGE {trade.stage} THESIS):
+                        </span>
+                        <span className="text-[10px] text-purple-600 font-mono">
+                          Sentiment: {trade.sentimentScore > 0 ? '+' : ''}{trade.sentimentScore}/100
+                        </span>
+                      </div>
+                      <p className="text-slate-800 text-xs leading-relaxed font-sans bg-white/70 p-2.5 rounded-lg border border-purple-100">
+                        "{trade.aiReasoning}"
+                      </p>
+                    </div>
+                  )}
 
                   {/* Stage Escalation Timeline Toggle */}
                   {trade.stageHistory && trade.stageHistory.length > 0 && (

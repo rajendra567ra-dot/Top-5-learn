@@ -25,6 +25,7 @@ import {
   calculateStagedTradeParameters, 
   analyzeTradeMistakeAndEvolve, 
   formatTelegramStageTradeOpen, 
+  formatTelegramPartialTPHit,
   formatTelegramStageUpgrade,
   formatTelegramTPHit, 
   formatTelegramSLHit, 
@@ -323,135 +324,308 @@ async function startServer() {
           currentPrice = parseFloat((currentPrice * (1 + jitter)).toFixed(currentPrice >= 1 ? 4 : 6));
         }
 
-        const priceDelta = trade.direction === 'LONG' 
+        const isLong = trade.direction === 'LONG';
+        const priceDelta = isLong 
           ? (currentPrice - trade.entryPrice) 
           : (trade.entryPrice - currentPrice);
         
-        const unrealizedPnL = parseFloat(((priceDelta / trade.entryPrice) * trade.positionSize).toFixed(2));
-        const unrealizedPnLPercent = parseFloat(((unrealizedPnL / trade.margin) * 100).toFixed(2));
+        // Active remaining margin determines current position size
+        const activeMargin = trade.remainingMargin || trade.margin;
+        const activePositionSize = activeMargin * trade.leverage;
+        const unrealizedPnL = parseFloat(((priceDelta / trade.entryPrice) * activePositionSize).toFixed(2));
+        const unrealizedPnLPercent = parseFloat(((unrealizedPnL / activeMargin) * 100).toFixed(2));
 
-        const updatedTrade: TradePosition = {
+        let updatedTrade: TradePosition = {
           ...trade,
           currentPrice,
           unrealizedPnL,
           unrealizedPnLPercent,
+          remainingMargin: activeMargin,
+          totalBookedPnL: trade.totalBookedPnL || 0,
         };
 
-        // Check Take Profit condition
-        const isTP = (trade.direction === 'LONG' && currentPrice >= trade.takeProfitPrice) ||
-                     (trade.direction === 'SHORT' && currentPrice <= trade.takeProfitPrice) ||
-                     (unrealizedPnL >= trade.targetProfitUsd && unrealizedPnL >= 2.00);
+        // --- MULTI-TIER TAKE-PROFIT LEVEL CHECKS ---
+        
+        // 1. Check TP 1 Target (Book 35% of initial position & Shift SL to Entry Breakeven)
+        const isTP1Hit = !updatedTrade.tp1Hit && (
+          (isLong && currentPrice >= updatedTrade.tp1Price) ||
+          (!isLong && currentPrice <= updatedTrade.tp1Price)
+        );
 
-        // Check Stop Loss condition
-        const isSL = (trade.direction === 'LONG' && currentPrice <= trade.stopLossPrice) ||
-                     (trade.direction === 'SHORT' && currentPrice >= trade.stopLossPrice) ||
-                     (unrealizedPnL <= -trade.maxLossUsd);
+        if (isTP1Hit) {
+          const booked35 = parseFloat(Math.max(0.70, updatedTrade.targetProfitUsd * 0.35).toFixed(2));
+          const newTotalBooked = parseFloat(((updatedTrade.totalBookedPnL || 0) + booked35).toFixed(2));
+          const newRemainingMargin = parseFloat((updatedTrade.margin * 0.65).toFixed(2)); // 65% remaining
 
-        if (isTP) {
-          // Take-Profit hit
-          const pnl = Math.max(2.00, unrealizedPnL);
-          const newBal = parseFloat((fleetState.masterPortfolio.currentBalance + pnl).toFixed(2));
+          // Credit profit to master portfolio balance
+          const newBal = parseFloat((fleetState.masterPortfolio.currentBalance + booked35).toFixed(2));
           const totalNet = parseFloat((newBal - fleetState.masterPortfolio.initialBase).toFixed(2));
           const netROI = parseFloat(((totalNet / fleetState.masterPortfolio.initialBase) * 100).toFixed(2));
-          const wins = fleetState.masterPortfolio.totalWins + 1;
-          const totalTrades = fleetState.masterPortfolio.totalTradesExecuted + 1;
-          const winRate = parseFloat(((wins / totalTrades) * 100).toFixed(1));
 
           fleetState.masterPortfolio = {
             ...fleetState.masterPortfolio,
             currentBalance: newBal,
             totalRealizedPnL: totalNet,
             netROI,
-            totalWins: wins,
-            totalTradesExecuted: totalTrades,
-            fleetWinRate: winRate,
-            activeStagedTradesCount: Math.max(0, fleetState.activeTrades.length - 1),
           };
 
-          // Update confirming bots stats
-          fleetState.bots = fleetState.bots.map(b => {
-            if (trade.confirmingBotIds.includes(b.id)) {
-              return {
-                ...b,
-                winTradesAssisted: b.winTradesAssisted + 1,
-                totalPnLAssisted: parseFloat((b.totalPnLAssisted + pnl).toFixed(2)),
-              };
-            }
-            return b;
-          });
-
-          // Log to audit logs
-          const closedLog: TradePosition = {
+          updatedTrade = {
             ...updatedTrade,
-            id: `audit-${trade.id}-${Date.now()}`,
-            status: 'CLOSED_TP',
-            stageAtClose: trade.stage,
-            closePrice: currentPrice,
-            realizedPnL: pnl,
-            realizedPnLPercent: ((pnl / trade.margin) * 100),
-            exitTime: Date.now(),
-            exitReason: `Take-Profit Hit @ $${currentPrice} (+$${pnl.toFixed(2)})`,
+            tp1Hit: true,
+            tp1HitTime: now,
+            tp1BookedPnL: booked35,
+            totalBookedPnL: newTotalBooked,
+            remainingMargin: newRemainingMargin,
+            stopLossPrice: updatedTrade.entryPrice, // Shift SL to Entry Breakeven (100% Risk Free)
+            slMode: 'BREAKEVEN',
           };
-          fleetState.auditLogs = [closedLog, ...(fleetState.auditLogs || []).slice(0, 99)];
 
-          // Dispatch Telegram Alert directly from server
+          // Dispatch Telegram Alert for TP1
           if (fleetState.telegramConfig.notifyOnTakeProfit) {
-            const tpMsg = formatTelegramTPHit(closedLog, fleetState.masterPortfolio);
-            dispatchTelegramMessage(tpMsg, 'TAKE_PROFIT');
+            const tp1Msg = formatTelegramPartialTPHit(
+              updatedTrade, 
+              1, 
+              booked35, 
+              updatedTrade.entryPrice, 
+              '100% Risk-Free Entry Breakeven', 
+              fleetState.masterPortfolio
+            );
+            dispatchTelegramMessage(tp1Msg, 'TAKE_PROFIT');
           }
+        }
 
-        } else if (isSL) {
-          // Stop-Loss hit
-          const loss = Math.abs(unrealizedPnL);
-          const newBal = parseFloat(Math.max(100, fleetState.masterPortfolio.currentBalance - loss).toFixed(2));
+        // 2. Check TP 2 Target (Book 25% of initial position & Shift SL to TP1 Price)
+        const isTP2Hit = updatedTrade.tp1Hit && !updatedTrade.tp2Hit && (
+          (isLong && currentPrice >= updatedTrade.tp2Price) ||
+          (!isLong && currentPrice <= updatedTrade.tp2Price)
+        );
+
+        if (isTP2Hit) {
+          const booked25 = parseFloat(Math.max(0.50, updatedTrade.targetProfitUsd * 0.25).toFixed(2));
+          const newTotalBooked = parseFloat(((updatedTrade.totalBookedPnL || 0) + booked25).toFixed(2));
+          const newRemainingMargin = parseFloat((updatedTrade.margin * 0.40).toFixed(2)); // 40% remaining
+
+          const newBal = parseFloat((fleetState.masterPortfolio.currentBalance + booked25).toFixed(2));
           const totalNet = parseFloat((newBal - fleetState.masterPortfolio.initialBase).toFixed(2));
           const netROI = parseFloat(((totalNet / fleetState.masterPortfolio.initialBase) * 100).toFixed(2));
-          const losses = fleetState.masterPortfolio.totalLosses + 1;
-          const totalTrades = fleetState.masterPortfolio.totalTradesExecuted + 1;
-          const winRate = totalTrades > 0 ? parseFloat(((fleetState.masterPortfolio.totalWins / totalTrades) * 100).toFixed(1)) : 0;
-
-          // Perform Autonomous Post-Mortem & Evolve
-          const { learningNote, updatedBots } = analyzeTradeMistakeAndEvolve(
-            updatedTrade,
-            fleetState.bots,
-            fleetState.masterPortfolio.evolutionGeneration
-          );
-
-          fleetState.bots = updatedBots;
 
           fleetState.masterPortfolio = {
             ...fleetState.masterPortfolio,
             currentBalance: newBal,
             totalRealizedPnL: totalNet,
             netROI,
-            totalLosses: losses,
-            totalTradesExecuted: totalTrades,
-            fleetWinRate: winRate,
-            evolutionGeneration: fleetState.masterPortfolio.evolutionGeneration + 1,
-            selfLearningAdaptationsCount: fleetState.masterPortfolio.selfLearningAdaptationsCount + 1,
-            activeStagedTradesCount: Math.max(0, fleetState.activeTrades.length - 1),
           };
 
-          const closedLog: TradePosition = {
+          updatedTrade = {
             ...updatedTrade,
-            id: `audit-${trade.id}-${Date.now()}`,
-            status: 'CLOSED_SL',
-            stageAtClose: trade.stage,
-            closePrice: currentPrice,
-            realizedPnL: -loss,
-            realizedPnLPercent: -((loss / trade.margin) * 100),
-            exitTime: Date.now(),
-            exitReason: `Stop-Loss Protected @ $${currentPrice} (-$${loss.toFixed(2)})`,
-            mistakeAnalysis: learningNote.mistakeIdentified,
+            tp2Hit: true,
+            tp2HitTime: now,
+            tp2BookedPnL: booked25,
+            totalBookedPnL: newTotalBooked,
+            remainingMargin: newRemainingMargin,
+            stopLossPrice: updatedTrade.tp1Price, // Shift SL to TP1 price (Guaranteed Profit Locked)
+            slMode: 'LOCKED_TP1',
           };
-          fleetState.auditLogs = [closedLog, ...(fleetState.auditLogs || []).slice(0, 99)];
 
-          // Dispatch Telegram Alert directly from server
-          if (fleetState.telegramConfig.notifyOnStopLoss) {
-            const slMsg = formatTelegramSLHit(closedLog, fleetState.masterPortfolio, learningNote);
-            dispatchTelegramMessage(slMsg, 'STOP_LOSS');
+          if (fleetState.telegramConfig.notifyOnTakeProfit) {
+            const tp2Msg = formatTelegramPartialTPHit(
+              updatedTrade, 
+              2, 
+              booked25, 
+              updatedTrade.tp1Price, 
+              'Locked at TP1 Profit Level', 
+              fleetState.masterPortfolio
+            );
+            dispatchTelegramMessage(tp2Msg, 'TAKE_PROFIT');
           }
+        }
 
+        // 3. Check TP 3 Target (Book 20% of initial position & Shift SL to TP2 Price, Activate 20% Runner)
+        const isTP3Hit = updatedTrade.tp2Hit && !updatedTrade.tp3Hit && (
+          (isLong && currentPrice >= updatedTrade.tp3Price) ||
+          (!isLong && currentPrice <= updatedTrade.tp3Price)
+        );
+
+        if (isTP3Hit) {
+          const booked20 = parseFloat(Math.max(0.40, updatedTrade.targetProfitUsd * 0.20).toFixed(2));
+          const newTotalBooked = parseFloat(((updatedTrade.totalBookedPnL || 0) + booked20).toFixed(2));
+          const runnerMargin = parseFloat((updatedTrade.margin * 0.20).toFixed(2)); // 20% runner
+
+          const newBal = parseFloat((fleetState.masterPortfolio.currentBalance + booked20).toFixed(2));
+          const totalNet = parseFloat((newBal - fleetState.masterPortfolio.initialBase).toFixed(2));
+          const netROI = parseFloat(((totalNet / fleetState.masterPortfolio.initialBase) * 100).toFixed(2));
+
+          fleetState.masterPortfolio = {
+            ...fleetState.masterPortfolio,
+            currentBalance: newBal,
+            totalRealizedPnL: totalNet,
+            netROI,
+          };
+
+          updatedTrade = {
+            ...updatedTrade,
+            tp3Hit: true,
+            tp3HitTime: now,
+            tp3BookedPnL: booked20,
+            totalBookedPnL: newTotalBooked,
+            remainingMargin: runnerMargin,
+            runnerActive: true,
+            stopLossPrice: updatedTrade.tp2Price, // Shift SL to TP2 price
+            trailingStopPrice: updatedTrade.tp2Price,
+            slMode: 'LOCKED_TP2',
+          };
+
+          if (fleetState.telegramConfig.notifyOnTakeProfit) {
+            const tp3Msg = formatTelegramPartialTPHit(
+              updatedTrade, 
+              3, 
+              booked20, 
+              updatedTrade.tp2Price, 
+              'Locked at TP2 Level (20% Runner Active)', 
+              fleetState.masterPortfolio
+            );
+            dispatchTelegramMessage(tp3Msg, 'TAKE_PROFIT');
+          }
+        }
+
+        // 4. Dynamic Trailing Stop Loss along Market Structure (for Runner or Advanced TP stage)
+        if (updatedTrade.runnerActive || updatedTrade.tp3Hit) {
+          if (isLong) {
+            // Long trailing: trail 1.5% below current price or higher structural swing low
+            const dynamicTrail = parseFloat((currentPrice * 0.985).toFixed(currentPrice >= 1 ? 4 : 6));
+            if (dynamicTrail > updatedTrade.stopLossPrice) {
+              updatedTrade.stopLossPrice = dynamicTrail;
+              updatedTrade.trailingStopPrice = dynamicTrail;
+              updatedTrade.slMode = 'TRAILING_STRUCTURE';
+            }
+          } else {
+            // Short trailing: trail 1.5% above current price or lower structural swing high
+            const dynamicTrail = parseFloat((currentPrice * 1.015).toFixed(currentPrice >= 1 ? 4 : 6));
+            if (dynamicTrail < updatedTrade.stopLossPrice) {
+              updatedTrade.stopLossPrice = dynamicTrail;
+              updatedTrade.trailingStopPrice = dynamicTrail;
+              updatedTrade.slMode = 'TRAILING_STRUCTURE';
+            }
+          }
+        }
+
+        // --- STOP-LOSS & FULL POSITION CLOSE EVALUATION ---
+        const isStopHit = (isLong && currentPrice <= updatedTrade.stopLossPrice) ||
+                          (!isLong && currentPrice >= updatedTrade.stopLossPrice) ||
+                          (updatedTrade.slMode === 'INITIAL' && unrealizedPnL <= -updatedTrade.maxLossUsd);
+
+        if (isStopHit) {
+          // If partial profit was already booked or SL was at Breakeven/TP1/TP2:
+          if ((updatedTrade.totalBookedPnL && updatedTrade.totalBookedPnL > 0) || updatedTrade.slMode !== 'INITIAL') {
+            // Trade exit with protected profit / breakeven!
+            const runnerFinalPnL = Math.max(0, unrealizedPnL);
+            const finalNetRealized = parseFloat(((updatedTrade.totalBookedPnL || 0) + runnerFinalPnL).toFixed(2));
+            const newBal = parseFloat((fleetState.masterPortfolio.currentBalance + runnerFinalPnL).toFixed(2));
+            const totalNet = parseFloat((newBal - fleetState.masterPortfolio.initialBase).toFixed(2));
+            const netROI = parseFloat(((totalNet / fleetState.masterPortfolio.initialBase) * 100).toFixed(2));
+            const wins = fleetState.masterPortfolio.totalWins + 1;
+            const totalTrades = fleetState.masterPortfolio.totalTradesExecuted + 1;
+            const winRate = parseFloat(((wins / totalTrades) * 100).toFixed(1));
+
+            fleetState.masterPortfolio = {
+              ...fleetState.masterPortfolio,
+              currentBalance: newBal,
+              totalRealizedPnL: totalNet,
+              netROI,
+              totalWins: wins,
+              totalTradesExecuted: totalTrades,
+              fleetWinRate: winRate,
+              activeStagedTradesCount: Math.max(0, fleetState.activeTrades.length - 1),
+            };
+
+            // Update confirming bots win stats
+            fleetState.bots = fleetState.bots.map(b => {
+              if (updatedTrade.confirmingBotIds.includes(b.id)) {
+                return {
+                  ...b,
+                  winTradesAssisted: b.winTradesAssisted + 1,
+                  totalPnLAssisted: parseFloat((b.totalPnLAssisted + finalNetRealized).toFixed(2)),
+                };
+              }
+              return b;
+            });
+
+            const exitReason = updatedTrade.runnerActive 
+              ? `Runner Closed @ Trailing S/R $${currentPrice} (Total Harvested: +$${finalNetRealized.toFixed(2)})`
+              : (updatedTrade.slMode === 'BREAKEVEN'
+                  ? `Breakeven Exit @ $${currentPrice} (TP1 Booked: +$${updatedTrade.totalBookedPnL.toFixed(2)})`
+                  : `Protected Exit @ $${currentPrice} (Total Realized: +$${finalNetRealized.toFixed(2)})`);
+
+            const closedLog: TradePosition = {
+              ...updatedTrade,
+              id: `audit-${updatedTrade.id}-${Date.now()}`,
+              status: 'CLOSED_TP',
+              stageAtClose: updatedTrade.stage,
+              closePrice: currentPrice,
+              realizedPnL: finalNetRealized,
+              realizedPnLPercent: parseFloat(((finalNetRealized / updatedTrade.margin) * 100).toFixed(2)),
+              exitTime: Date.now(),
+              exitReason,
+            };
+            fleetState.auditLogs = [closedLog, ...(fleetState.auditLogs || []).slice(0, 99)];
+
+            if (fleetState.telegramConfig.notifyOnTakeProfit) {
+              const tpMsg = formatTelegramTPHit(closedLog, fleetState.masterPortfolio);
+              dispatchTelegramMessage(tpMsg, 'TAKE_PROFIT');
+            }
+
+          } else {
+            // Initial Stop-Loss hit (No TP hit yet, max 3% loss limit guard)
+            const loss = Math.abs(unrealizedPnL);
+            const newBal = parseFloat(Math.max(100, fleetState.masterPortfolio.currentBalance - loss).toFixed(2));
+            const totalNet = parseFloat((newBal - fleetState.masterPortfolio.initialBase).toFixed(2));
+            const netROI = parseFloat(((totalNet / fleetState.masterPortfolio.initialBase) * 100).toFixed(2));
+            const losses = fleetState.masterPortfolio.totalLosses + 1;
+            const totalTrades = fleetState.masterPortfolio.totalTradesExecuted + 1;
+            const winRate = totalTrades > 0 ? parseFloat(((fleetState.masterPortfolio.totalWins / totalTrades) * 100).toFixed(1)) : 0;
+
+            // Perform Autonomous Post-Mortem & Evolve
+            const { learningNote, updatedBots } = analyzeTradeMistakeAndEvolve(
+              updatedTrade,
+              fleetState.bots,
+              fleetState.masterPortfolio.evolutionGeneration
+            );
+
+            fleetState.bots = updatedBots;
+
+            fleetState.masterPortfolio = {
+              ...fleetState.masterPortfolio,
+              currentBalance: newBal,
+              totalRealizedPnL: totalNet,
+              netROI,
+              totalLosses: losses,
+              totalTradesExecuted: totalTrades,
+              fleetWinRate: winRate,
+              evolutionGeneration: fleetState.masterPortfolio.evolutionGeneration + 1,
+              selfLearningAdaptationsCount: fleetState.masterPortfolio.selfLearningAdaptationsCount + 1,
+              activeStagedTradesCount: Math.max(0, fleetState.activeTrades.length - 1),
+            };
+
+            const closedLog: TradePosition = {
+              ...updatedTrade,
+              id: `audit-${updatedTrade.id}-${Date.now()}`,
+              status: 'CLOSED_SL',
+              stageAtClose: updatedTrade.stage,
+              closePrice: currentPrice,
+              realizedPnL: -loss,
+              realizedPnLPercent: -((loss / updatedTrade.margin) * 100),
+              exitTime: Date.now(),
+              exitReason: `Initial Stop-Loss Guard @ $${currentPrice} (-$${loss.toFixed(2)})`,
+              mistakeAnalysis: learningNote.mistakeIdentified,
+            };
+            fleetState.auditLogs = [closedLog, ...(fleetState.auditLogs || []).slice(0, 99)];
+
+            // Dispatch Telegram Alert directly from server
+            if (fleetState.telegramConfig.notifyOnStopLoss) {
+              const slMsg = formatTelegramSLHit(closedLog, fleetState.masterPortfolio, learningNote);
+              dispatchTelegramMessage(slMsg, 'STOP_LOSS');
+            }
+          }
         } else {
           remainingTrades.push(updatedTrade);
         }
@@ -483,6 +657,7 @@ async function startServer() {
               confirmingBotIds: newConfirmingIds,
               confirmingBotNames: newConfirmingNames,
               margin: updatedMargin,
+              remainingMargin: updatedMargin,
               leverage: updatedLev,
               positionSize: updatedPos,
             };
@@ -499,18 +674,37 @@ async function startServer() {
         });
       }
 
-      // 3. Autonomous Market Scanner & Staged Trade Execution (every ~25s if capacity available)
-      if (fleetState.activeTrades.length < 5 && now - fleetState.lastScanTimestamp > 25000) {
+      // 3. Autonomous Market Scanner & Staged Trade Execution
+      // UNLIMITED OPEN TRADES: No artificial cap! Trades trigger whenever strict criteria match.
+      if (now - fleetState.lastScanTimestamp > 20000) {
         fleetState.lastScanTimestamp = now;
 
         // Find candidate coins not currently active
         const activeSymbols = new Set(fleetState.activeTrades.map(t => t.symbol.split('/')[0]));
-        const candidateCoins = coinUniverse.filter(c => !activeSymbols.has(c.symbol));
+        
+        // ULTRA-STRICT FILTER: High conviction setup screening (Bots don't take trades easily!)
+        const strictCandidates = coinUniverse.filter(c => {
+          if (activeSymbols.has(c.symbol)) return false;
+          
+          const rsi = c.rsi || 50;
+          const vol = Number(c.volatility) || 5;
+          const sentiment = Math.abs(c.sentimentScore || 0);
 
-        if (candidateCoins.length > 0) {
-          const coin = candidateCoins[Math.floor(Math.random() * Math.min(25, candidateCoins.length))];
+          // Criteria 1: RSI extreme bounce or solid trend breakout
+          const rsiStrict = (rsi <= 38) || (rsi >= 62) || (rsi >= 54 && rsi <= 66 && c.macd === 'BULLISH_CROSS');
+          // Criteria 2: Sufficient volatility (reject flat/dead noise)
+          const volStrict = vol >= 2.5 && vol <= 14.0;
+          // Criteria 3: High sentiment conviction
+          const sentimentStrict = sentiment >= 45;
+
+          return rsiStrict && volStrict && sentimentStrict;
+        });
+
+        if (strictCandidates.length > 0) {
+          const coin = strictCandidates[Math.floor(Math.random() * strictCandidates.length)];
           const initiatorBot = fleetState.bots[Math.floor(Math.random() * fleetState.bots.length)];
-          const direction: TradeDirection = (coin.change24h || 0) >= 0 ? 'LONG' : 'SHORT';
+          const isOversoldLong = (coin.rsi || 50) <= 45;
+          const direction: TradeDirection = isOversoldLong ? 'LONG' : ((coin.change24h || 0) >= 0 ? 'LONG' : 'SHORT');
           const stage: ConsensusStage = Math.min(3, Math.max(1, Math.floor(Math.random() * 3) + 1)) as ConsensusStage;
           
           const confirmingBots = fleetState.bots.slice(0, stage);
@@ -545,11 +739,25 @@ async function startServer() {
             confirmingBotNames,
             leverage: params.leverage,
             margin: params.margin,
+            remainingMargin: params.remainingMargin,
             positionSize: params.positionSize,
             entryPrice: params.entryPrice,
             currentPrice: params.entryPrice,
-            takeProfitPrice: params.takeProfitPrice,
+            initialStopLossPrice: params.initialStopLossPrice,
             stopLossPrice: params.stopLossPrice,
+            slMode: 'INITIAL',
+            tp1Price: params.tp1Price,
+            tp1Hit: false,
+            tp2Price: params.tp2Price,
+            tp2Hit: false,
+            tp3Price: params.tp3Price,
+            tp3Hit: false,
+            runnerPercent: 20,
+            runnerActive: false,
+            structuralSupportPrice: params.structuralSupportPrice,
+            structuralResistancePrice: params.structuralResistancePrice,
+            totalBookedPnL: 0,
+            takeProfitPrice: params.takeProfitPrice,
             targetProfitUsd: params.targetProfitUsd,
             maxLossUsd: params.maxLossUsd,
             unrealizedPnL: 0,
@@ -557,13 +765,14 @@ async function startServer() {
             status: 'OPEN',
             entryTime: Date.now(),
             aiReasoning: params.aiReasoning,
+            teacherExplanation: params.teacherExplanation,
             sentimentScore: coin.sentimentScore || 75,
             stageHistory: [{
               stage,
               timestamp: Date.now(),
               addedBotId: initiatorBot.id,
               addedBotName: `${initiatorBot.number}. ${initiatorBot.name}`,
-              rationale: `Autonomous signal scanner entry with ${confirmingBots.length} bot consensus.`,
+              rationale: `Ultra-strict quantitative filter passed with ${confirmingBots.length} bot consensus.`,
               newLeverage: params.leverage,
               newMargin: params.margin,
             }],
@@ -791,11 +1000,25 @@ async function startServer() {
       confirmingBotNames,
       leverage: params.leverage,
       margin: params.margin,
+      remainingMargin: params.remainingMargin,
       positionSize: params.positionSize,
       entryPrice: params.entryPrice,
       currentPrice: params.entryPrice,
-      takeProfitPrice: params.takeProfitPrice,
+      initialStopLossPrice: params.initialStopLossPrice,
       stopLossPrice: params.stopLossPrice,
+      slMode: 'INITIAL',
+      tp1Price: params.tp1Price,
+      tp1Hit: false,
+      tp2Price: params.tp2Price,
+      tp2Hit: false,
+      tp3Price: params.tp3Price,
+      tp3Hit: false,
+      runnerPercent: 20,
+      runnerActive: false,
+      structuralSupportPrice: params.structuralSupportPrice,
+      structuralResistancePrice: params.structuralResistancePrice,
+      totalBookedPnL: 0,
+      takeProfitPrice: params.takeProfitPrice,
       targetProfitUsd: params.targetProfitUsd,
       maxLossUsd: params.maxLossUsd,
       unrealizedPnL: 0,
@@ -803,6 +1026,7 @@ async function startServer() {
       status: 'OPEN',
       entryTime: Date.now(),
       aiReasoning: params.aiReasoning,
+      teacherExplanation: params.teacherExplanation,
       sentimentScore: coin.sentimentScore || 75,
       stageHistory: [{
         stage,
