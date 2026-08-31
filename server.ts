@@ -15,14 +15,17 @@ import {
   TelegramLog, 
   ConsensusStage, 
   TradeDirection,
-  BotLearningNote 
+  BotLearningNote,
+  ConfirmationStrategyMode
 } from './src/types';
 import { INITIAL_BOTS } from './src/data/initialBots';
 import { INITIAL_ACTIVE_TRADES, INITIAL_AUDIT_LOGS } from './src/data/initialTrades';
 import { generateTop500Universe, isHighDecimalOrBlacklistedCoin } from './src/data/topCoins';
 import { 
   STAGE_CONFIGS,
-  calculateStagedTradeParameters, 
+  CONFIRMATION_STRATEGIES,
+  calculateStagedTradeParameters,
+  evaluateTradeConfirmationMatrix,
   analyzeTradeMistakeAndEvolve, 
   formatTelegramStageTradeOpen, 
   formatTelegramPartialTPHit,
@@ -36,6 +39,7 @@ interface ServerFleetState {
   serverStartedAt: number;
   accumulatedUptimeSeconds: number;
   is247Running: boolean;
+  activeStrategyMode: ConfirmationStrategyMode;
   masterPortfolio: MasterPortfolio;
   bots: TradingBot[];
   activeTrades: TradePosition[];
@@ -102,7 +106,11 @@ function loadPersistedState(): ServerFleetState {
             serverStartedAt: parsed.serverStartedAt || Date.now(),
             accumulatedUptimeSeconds: parsed.accumulatedUptimeSeconds || 0,
             is247Running: parsed.is247Running !== undefined ? parsed.is247Running : true,
-            masterPortfolio,
+            activeStrategyMode: parsed.activeStrategyMode || 'MULTI_CONFLUENCE',
+            masterPortfolio: {
+              ...masterPortfolio,
+              activeStrategyMode: parsed.activeStrategyMode || 'MULTI_CONFLUENCE',
+            },
             bots: parsed.bots && parsed.bots.length > 0 ? parsed.bots : INITIAL_BOTS,
             activeTrades: cleanedActiveTrades,
             auditLogs: cleanedAuditLogs,
@@ -133,7 +141,8 @@ function loadPersistedState(): ServerFleetState {
     serverStartedAt: Date.now(),
     accumulatedUptimeSeconds: 0,
     is247Running: true,
-    masterPortfolio: { ...INITIAL_MASTER_PORTFOLIO },
+    activeStrategyMode: 'MULTI_CONFLUENCE',
+    masterPortfolio: { ...INITIAL_MASTER_PORTFOLIO, activeStrategyMode: 'MULTI_CONFLUENCE' },
     bots: JSON.parse(JSON.stringify(INITIAL_BOTS)),
     activeTrades: sanitizeTradesList(INITIAL_ACTIVE_TRADES),
     auditLogs: [...INITIAL_AUDIT_LOGS],
@@ -283,6 +292,7 @@ async function startServer() {
     const chatId = fleetState.telegramConfig.chatId || process.env.TELEGRAM_CHAT_ID;
     const isConfigured = Boolean(token && chatId);
     let messageStatus: 'SENT' | 'SIMULATED' | 'FAILED' = 'SIMULATED';
+    let errorDetails: string | undefined = undefined;
 
     if (isConfigured && fleetState.telegramConfig.enabled) {
       try {
@@ -300,13 +310,25 @@ async function startServer() {
         const data = await response.json();
         if (data.ok) {
           messageStatus = 'SENT';
+          if (fleetState.telegramConfig.lastError) {
+            fleetState.telegramConfig.lastError = undefined;
+            fleetState.telegramConfig.lastErrorTimestamp = undefined;
+          }
         } else {
-          console.warn('Telegram send failed:', data.description);
+          const desc = data.description || 'Unauthorized or Invalid Telegram Bot Token';
+          console.warn(`[Telegram Alert] Dispatch notice: ${desc}`);
           messageStatus = 'FAILED';
+          errorDetails = desc;
+          fleetState.telegramConfig.lastError = desc;
+          fleetState.telegramConfig.lastErrorTimestamp = Date.now();
         }
       } catch (err: any) {
-        console.error('Telegram dispatch network error:', err?.message || err);
+        const netErr = err?.message || 'Network error connecting to Telegram';
+        console.warn(`[Telegram Alert] Network error: ${netErr}`);
         messageStatus = 'FAILED';
+        errorDetails = netErr;
+        fleetState.telegramConfig.lastError = netErr;
+        fleetState.telegramConfig.lastErrorTimestamp = Date.now();
       }
     }
 
@@ -317,6 +339,7 @@ async function startServer() {
       target: isConfigured ? `Chat ID: ${chatId}` : 'Simulated Terminal',
       message: text,
       status: messageStatus,
+      errorDetails,
     };
 
     fleetState.telegramLogs = [newLog, ...(fleetState.telegramLogs || []).slice(0, 99)];
@@ -711,7 +734,9 @@ async function startServer() {
           fleetState.activeTrades.map(t => t.symbol.replace('/USDT', '').replace('USDT', '').trim().toUpperCase())
         );
         
-        // ULTRA-STRICT FILTER: High conviction setup screening (Bots don't take trades easily!)
+        const stratMode = fleetState.activeStrategyMode || 'MULTI_CONFLUENCE';
+        
+        // ULTRA-STRICT FILTER: High conviction setup screening based on active strategy mode
         // Excludes meme coins, micro-decimal coins (<$0.01), and assets currently open
         const strictCandidates = coinUniverse.filter(c => {
           const cleanSym = c.symbol.replace('/USDT', '').replace('USDT', '').trim().toUpperCase();
@@ -722,15 +747,27 @@ async function startServer() {
           const rsi = c.rsi || 50;
           const vol = Number(c.volatility) || 5;
           const sentiment = Math.abs(c.sentimentScore || 0);
+          const chg = Math.abs(c.change24h || 0);
 
-          // Criteria 1: RSI extreme bounce or solid trend breakout
-          const rsiStrict = (rsi <= 38) || (rsi >= 62) || (rsi >= 54 && rsi <= 66 && c.macd === 'BULLISH_CROSS');
-          // Criteria 2: Sufficient volatility (reject flat/dead noise)
-          const volStrict = vol >= 2.5 && vol <= 14.0;
-          // Criteria 3: High sentiment conviction (minimum 45+ absolute score)
-          const sentimentStrict = sentiment >= 45;
-
-          return rsiStrict && volStrict && sentimentStrict;
+          if (stratMode === 'TREND_PULLBACK') {
+            // Trend pullback: Macro momentum exists + RSI pulled back to 38-54 zone
+            return chg >= 1.5 && rsi >= 36 && rsi <= 56 && vol >= 2.0;
+          } else if (stratMode === 'LIQUIDITY_REVERSAL') {
+            // Liquidity reversal: Extreme RSI exhaustion + high volatility rejection
+            return (rsi <= 32 || rsi >= 68) && vol >= 3.2;
+          } else if (stratMode === 'VOLATILITY_SQUEEZE') {
+            // Volatility squeeze: Volatility compression turning into explosive expansion
+            return vol >= 4.0 && (c.volume24h || 0) > 40000000;
+          } else if (stratMode === 'NEURAL_NARRATIVE') {
+            // AI Neural Sentiment: High absolute sentiment score
+            return sentiment >= 45 && vol >= 2.5;
+          } else {
+            // Default MULTI_CONFLUENCE: Multi-indicator confluence
+            const rsiStrict = (rsi <= 38) || (rsi >= 62) || (rsi >= 54 && rsi <= 66 && c.macd === 'BULLISH_CROSS');
+            const volStrict = vol >= 2.5 && vol <= 14.0;
+            const sentimentStrict = sentiment >= 35;
+            return rsiStrict && volStrict && sentimentStrict;
+          }
         });
 
         if (strictCandidates.length > 0) {
@@ -753,7 +790,8 @@ async function startServer() {
             initiatorBot,
             confirmingBots,
             liveCoin,
-            direction
+            direction,
+            stratMode
           );
 
           const newTrade: TradePosition = {
@@ -799,13 +837,14 @@ async function startServer() {
             entryTime: Date.now(),
             aiReasoning: params.aiReasoning,
             teacherExplanation: params.teacherExplanation,
+            confirmationMatrix: params.confirmationMatrix,
             sentimentScore: coin.sentimentScore || 75,
             stageHistory: [{
               stage,
               timestamp: Date.now(),
               addedBotId: initiatorBot.id,
               addedBotName: `${initiatorBot.number}. ${initiatorBot.name}`,
-              rationale: `Ultra-strict quantitative filter passed with ${confirmingBots.length} bot consensus.`,
+              rationale: `${params.confirmationMatrix?.strategyName || 'Ultra-strict'} filter passed with ${params.confirmationMatrix?.confluenceScore || 85}% confluence (${confirmingBots.length} bots).`,
               newLeverage: params.leverage,
               newMargin: params.margin,
             }],
@@ -845,8 +884,98 @@ async function startServer() {
   }, 3000);
 
   // -------------------------------------------------------------
-  // API ENDPOINTS
+  // API ENDPOINTS & SYSTEM HEALTH
   // -------------------------------------------------------------
+
+  // Health and keepalive routes
+  app.get('/api/health', (req, res) => {
+    res.json({
+      status: 'ok',
+      uptime: process.uptime(),
+      is247Running: fleetState.is247Running,
+      activeStrategyMode: fleetState.activeStrategyMode || 'MULTI_CONFLUENCE',
+      activeTradesCount: fleetState.activeTrades.length,
+      masterBalance: fleetState.masterPortfolio.currentBalance,
+      timestamp: Date.now(),
+    });
+  });
+
+  app.get('/health', (req, res) => res.status(200).send('OK'));
+  app.get('/healthz', (req, res) => res.status(200).send('OK'));
+  app.get('/ping', (req, res) => res.status(200).send('pong'));
+
+  // Comprehensive server health & diagnostics
+  app.get('/api/fleet/server-health', (req, res) => {
+    const mem = process.memoryUsage();
+    const uptimeSec = process.uptime();
+    res.json({
+      success: true,
+      status: 'ONLINE',
+      engine: '24/7 Autonomous Quantitative Consensus Engine',
+      process: {
+        nodeVersion: process.version,
+        platform: process.platform,
+        uptimeSeconds: Math.floor(uptimeSec),
+        memoryMB: {
+          rss: Math.round(mem.rss / 1024 / 1024),
+          heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
+          heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+        },
+      },
+      engineStats: {
+        is247Running: fleetState.is247Running,
+        activeTrades: fleetState.activeTrades.length,
+        totalTradesExecuted: fleetState.masterPortfolio.totalTradesExecuted,
+        masterBalance: fleetState.masterPortfolio.currentBalance,
+        activeStrategyMode: fleetState.activeStrategyMode,
+        telegramConnected: Boolean(fleetState.telegramConfig.botToken && fleetState.telegramConfig.chatId),
+      },
+      connectionTips: [
+        'If you saw a temporary 502 or loading screen earlier, it was during a hot server reload or Telegram connection test.',
+        'The server runs autonomously 24/7 in cloud containers — client connection drops do NOT stop trade execution.',
+        'Data is continually persisted to disk in /data/fleet-state.json.',
+      ],
+    });
+  });
+
+  // Get list of available confirmation strategies
+  app.get('/api/fleet/strategies', (req, res) => {
+    res.json({
+      success: true,
+      activeStrategyMode: fleetState.activeStrategyMode || 'MULTI_CONFLUENCE',
+      strategies: Object.values(CONFIRMATION_STRATEGIES),
+    });
+  });
+
+  // Switch active confirmation strategy
+  app.post('/api/fleet/strategy/set', async (req, res) => {
+    try {
+      const { strategyMode } = req.body;
+      if (!strategyMode || !CONFIRMATION_STRATEGIES[strategyMode as ConfirmationStrategyMode]) {
+        return res.status(400).json({ success: false, error: 'Invalid strategy mode' });
+      }
+
+      fleetState.activeStrategyMode = strategyMode as ConfirmationStrategyMode;
+      fleetState.masterPortfolio.activeStrategyMode = strategyMode as ConfirmationStrategyMode;
+      persistStateToDisk();
+
+      const strat = CONFIRMATION_STRATEGIES[strategyMode as ConfirmationStrategyMode];
+      
+      // Notify via Telegram if configured
+      if (fleetState.telegramConfig.botToken && fleetState.telegramConfig.chatId) {
+        const msg = `⚙️ *[FLEET CONFIRMATION STRATEGY UPDATED]*\n━━━━━━━━━━━━━━━━━━━━\n• *New Mode*: *${strat.name}*\n• *Badge*: \`${strat.badge}\`\n• *Min Confluence*: \`${strat.minConfluencePercent}%\`\n• *Core Indicators*: ${strat.primaryIndicators.join(', ')}\n━━━━━━━━━━━━━━━━━━━━\n⚡ *24/7 Autonomous Scanner Auto-Configured!*`;
+        await dispatchTelegramMessage(msg, 'SYSTEM');
+      }
+
+      res.json({
+        success: true,
+        activeStrategyMode: fleetState.activeStrategyMode,
+        strategy: strat,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
 
   // Get full server-authoritative fleet state
   app.get('/api/fleet/state', (req, res) => {
@@ -861,6 +990,7 @@ async function startServer() {
       serverTime: now,
       uptimeSeconds: currentUptime,
       is247Running: fleetState.is247Running,
+      activeStrategyMode: fleetState.activeStrategyMode || 'MULTI_CONFLUENCE',
       nextSummarySeconds,
       masterPortfolio: fleetState.masterPortfolio,
       bots: fleetState.bots,
@@ -1209,11 +1339,14 @@ Return a JSON object with:
   app.post('/api/telegram/test', async (req, res) => {
     try {
       const { token, chatId } = req.body;
-      const botToken = token || fleetState.telegramConfig.botToken || process.env.TELEGRAM_BOT_TOKEN;
-      const targetChatId = chatId || fleetState.telegramConfig.chatId || process.env.TELEGRAM_CHAT_ID;
+      const botToken = (token || fleetState.telegramConfig.botToken || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+      const targetChatId = (chatId || fleetState.telegramConfig.chatId || process.env.TELEGRAM_CHAT_ID || '').trim();
 
       if (!botToken || !targetChatId) {
-        return res.status(400).json({ success: false, error: 'Both Bot Token and Chat ID are required for test.' });
+        return res.json({ 
+          success: false, 
+          error: 'Please enter both your Telegram Bot Token and Chat ID to verify.' 
+        });
       }
 
       const testMsg = `🤖 *[NEXUS 5-BOT AUTONOMOUS FLEET - CONNECTION VERIFIED]*\n\n✅ Telegram Webhook Connected Successfully!\n⚡ 5 Specialist Bots ($1,000 Base) Running 24/7 in Cloud Datacenter.\n📊 Trade Entries, Take-Profits, Stop-Loss Learning & Hourly Digests will be sent here.\n\n_Server is running 24/7. It will continue executing and notifying you even if your phone screen is off or mobile data is disconnected!_`;
@@ -1234,14 +1367,30 @@ Return a JSON object with:
         fleetState.telegramConfig.botToken = botToken;
         fleetState.telegramConfig.chatId = targetChatId;
         fleetState.telegramConfig.enabled = true;
+        fleetState.telegramConfig.lastError = undefined;
+        fleetState.telegramConfig.lastErrorTimestamp = undefined;
         persistStateToDisk();
 
-        res.json({ success: true, message: 'Test message sent successfully to your Telegram chat!' });
+        return res.json({ 
+          success: true, 
+          message: 'Test message delivered successfully to your Telegram chat!' 
+        });
       } else {
-        res.status(400).json({ success: false, error: data.description || 'Telegram API returned error' });
+        const errorDesc = data.description || 'Unauthorized (Invalid Bot Token)';
+        fleetState.telegramConfig.lastError = errorDesc;
+        fleetState.telegramConfig.lastErrorTimestamp = Date.now();
+        persistStateToDisk();
+
+        return res.json({ 
+          success: false, 
+          error: `${errorDesc}. Please verify your Bot Token with @BotFather and your Chat ID with @userinfobot.` 
+        });
       }
     } catch (err: any) {
-      res.status(500).json({ success: false, error: err?.message || 'Error connecting to Telegram API' });
+      return res.json({ 
+        success: false, 
+        error: err?.message || 'Network error connecting to Telegram API' 
+      });
     }
   });
 

@@ -165,6 +165,25 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
+          {/* Tab: Strategy & Multi-Indicator Confirmation */}
+          <button
+            id="tab-strategy-btn"
+            onClick={() => setActiveTab('strategy')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border cursor-pointer ${
+              activeTab === 'strategy'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <ShieldCheck className={`w-3.5 h-3.5 ${activeTab === 'strategy' ? 'text-cyan-400' : 'text-slate-400'}`} />
+            <span>Confirmation & Indicators</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              activeTab === 'strategy' ? 'bg-slate-800 text-cyan-300' : 'bg-cyan-50 text-cyan-700 border border-cyan-200'
+            }`}>
+              5 Strategies
+            </span>
+          </button>
+
           {/* Tab: 5 Specialist Bots */}
           <button
             id="tab-bots-btn"

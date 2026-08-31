@@ -7,7 +7,7 @@ interface TelegramSetupModalProps {
   onClose: () => void;
   config: TelegramConfig;
   onSaveConfig: (token: string, chatId: string) => void;
-  onTestConnection: (token: string, chatId: string) => Promise<boolean>;
+  onTestConnection: (token: string, chatId: string) => Promise<{ success: boolean; message: string }>;
 }
 
 export const TelegramSetupModal: React.FC<TelegramSetupModalProps> = ({
@@ -22,22 +22,20 @@ export const TelegramSetupModal: React.FC<TelegramSetupModalProps> = ({
   const [token, setToken] = useState(config.botToken || '');
   const [chatId, setChatId] = useState(config.chatId || '');
   const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(
+    config.lastError ? { success: false, message: `⚠️ Previous Telegram Alert Issue: ${config.lastError}` } : null
+  );
 
   const handleTest = async () => {
-    if (!token || !chatId) {
-      setTestResult({ success: false, message: 'Please enter both Bot Token and Chat ID.' });
+    if (!token.trim() || !chatId.trim()) {
+      setTestResult({ success: false, message: 'Please enter both Bot Token and Chat ID to verify.' });
       return;
     }
     setIsTesting(true);
     setTestResult(null);
     try {
-      const ok = await onTestConnection(token, chatId);
-      if (ok) {
-        setTestResult({ success: true, message: '✅ Connection successful! Test message dispatched to your Telegram.' });
-      } else {
-        setTestResult({ success: false, message: '❌ Verification failed. Check your Bot Token and Chat ID.' });
-      }
+      const res = await onTestConnection(token.trim(), chatId.trim());
+      setTestResult(res);
     } catch (err: any) {
       setTestResult({ success: false, message: `Error: ${err?.message || 'Failed to connect'}` });
     } finally {
@@ -46,8 +44,15 @@ export const TelegramSetupModal: React.FC<TelegramSetupModalProps> = ({
   };
 
   const handleSave = () => {
-    onSaveConfig(token, chatId);
+    onSaveConfig(token.trim(), chatId.trim());
     onClose();
+  };
+
+  const handleClear = () => {
+    setToken('');
+    setChatId('');
+    onSaveConfig('', '');
+    setTestResult({ success: true, message: 'Telegram credentials cleared. Running in local simulated mode.' });
   };
 
   return (
@@ -137,15 +142,26 @@ export const TelegramSetupModal: React.FC<TelegramSetupModalProps> = ({
 
         {/* Buttons */}
         <div className="flex items-center justify-between gap-3 pt-2">
-          <button
-            id="modal-test-telegram-btn"
-            type="button"
-            onClick={handleTest}
-            disabled={isTesting}
-            className="px-4 py-2 text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl transition-all disabled:opacity-50"
-          >
-            {isTesting ? 'Verifying...' : 'Test Connection'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              id="modal-test-telegram-btn"
+              type="button"
+              onClick={handleTest}
+              disabled={isTesting}
+              className="px-3.5 py-2 text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl transition-all disabled:opacity-50"
+            >
+              {isTesting ? 'Verifying...' : 'Test Connection'}
+            </button>
+            {(token || chatId) && (
+              <button
+                type="button"
+                onClick={handleClear}
+                className="px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl transition-all"
+              >
+                Clear Token
+              </button>
+            )}
+          </div>
 
           <div className="flex items-center gap-2">
             <button

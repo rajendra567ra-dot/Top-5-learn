@@ -5,6 +5,35 @@ export type MarketTrend = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 export type Recommendation = 'STRONG_LONG' | 'LONG' | 'NEUTRAL' | 'SHORT' | 'STRONG_SHORT';
 export type ConsensusStage = 1 | 2 | 3 | 4 | 5;
 
+export type ConfirmationStrategyMode = 
+  | 'MULTI_CONFLUENCE'       // Multi-Indicator Confluence Matrix (Trend + Momentum + Volatility + Volume + AI Sentiment)
+  | 'TREND_PULLBACK'         // Macro 200 EMA + 21 EMA Dynamic Pullback
+  | 'LIQUIDITY_REVERSAL'     // Institutional Liquidity Sweep & Bollinger 2.5σ Reversal
+  | 'VOLATILITY_SQUEEZE'     // Keltner / Bollinger Band Compression & Explosive Expansion
+  | 'NEURAL_NARRATIVE';      // AI Sentiment Velocity & Narrative Acceleration
+
+export interface TechnicalIndicatorConfluence {
+  name: string;
+  category: 'TREND' | 'MOMENTUM' | 'VOLATILITY' | 'VOLUME' | 'SENTIMENT';
+  value: string;
+  signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  confirmed: boolean;
+  weight: number;
+  description: string;
+}
+
+export interface TradeConfirmationMatrix {
+  strategyMode: ConfirmationStrategyMode;
+  strategyName: string;
+  confluenceScore: number; // 0 - 100%
+  minConfluenceRequired: number;
+  confirmedCount: number;
+  totalEvaluated: number;
+  indicators: TechnicalIndicatorConfluence[];
+  marketRegime: 'TRENDING_UP' | 'TRENDING_DOWN' | 'HIGH_VOLATILITY_RANGING' | 'COMPRESSION_SQUEEZE' | 'LIQUIDITY_HUNT';
+  primaryTrigger: string;
+}
+
 export interface BotLearningNote {
   id: string;
   timestamp: number;
@@ -124,6 +153,7 @@ export interface TradePosition {
   aiReasoning: string;
   teacherExplanation?: TeacherExplanation;
   sentimentScore: number;
+  confirmationMatrix?: TradeConfirmationMatrix;
   mistakeAnalysis?: string;
   exitReason?: string;
   stageAtClose?: ConsensusStage;
@@ -154,6 +184,7 @@ export interface CryptoCoin {
   confirmingBotsCount?: number; // 1 to 5
   recommendation: Recommendation;
   category: 'Layer 1' | 'DeFi' | 'AI / DePIN' | 'Meme' | 'Layer 2' | 'Infrastructure' | 'Gaming';
+  confirmationMatrix?: TradeConfirmationMatrix;
   contractAddress?: string;
   network?: string;
   cmcUrl?: string;
@@ -203,6 +234,7 @@ export interface MasterPortfolio {
   evolutionGeneration: number;
   selfLearningAdaptationsCount: number;
   activeStagedTradesCount?: number;
+  activeStrategyMode?: ConfirmationStrategyMode;
 }
 
 export interface TelegramConfig {
@@ -214,6 +246,8 @@ export interface TelegramConfig {
   notifyOnTakeProfit: boolean;
   notifyOnStopLoss: boolean;
   notifyHourlySummary: boolean;
+  lastError?: string;
+  lastErrorTimestamp?: number;
 }
 
 export interface TelegramLog {
@@ -223,4 +257,5 @@ export interface TelegramLog {
   target: string;
   message: string;
   status: 'SENT' | 'SIMULATED' | 'FAILED';
+  errorDetails?: string;
 }

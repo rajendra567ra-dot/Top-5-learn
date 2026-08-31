@@ -62,11 +62,17 @@ export const TelegramHubView: React.FC<TelegramHubViewProps> = ({
                   TELEGRAM REAL-TIME DISPATCH HUB
                 </h2>
                 <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
-                  isConfigured 
+                  isConfigured && !telegramConfig.lastError
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                    : isConfigured && telegramConfig.lastError
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
                     : 'bg-amber-50 text-amber-700 border-amber-200'
                 }`}>
-                  {isConfigured ? 'LIVE WEBHOOK CONNECTED' : 'SIMULATION MODE (NO TOKEN)'}
+                  {isConfigured && !telegramConfig.lastError
+                    ? 'LIVE WEBHOOK CONNECTED' 
+                    : isConfigured && telegramConfig.lastError
+                    ? 'TOKEN AUTH ERROR'
+                    : 'SIMULATION MODE (NO TOKEN)'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
@@ -107,6 +113,33 @@ export const TelegramHubView: React.FC<TelegramHubViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Telegram Auth Warning Banner if token is invalid or unauthorized */}
+      {telegramConfig.lastError && (
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs flex items-center justify-between gap-3 text-rose-800">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <strong className="font-semibold">Telegram Delivery Notice:</strong> {telegramConfig.lastError}. 
+              <span className="text-rose-600 ml-1">Please verify your Bot Token with @BotFather or use Simulated Mode.</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={onOpenSetupModal}
+              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-xs transition-all"
+            >
+              Update Credentials
+            </button>
+            <button
+              onClick={() => onUpdateConfig({ botToken: '', chatId: '', enabled: false })}
+              className="px-3 py-1.5 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 font-medium rounded-lg text-xs transition-all"
+            >
+              Switch to Simulation
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Alert Settings Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
@@ -225,9 +258,18 @@ export const TelegramHubView: React.FC<TelegramHubViewProps> = ({
                         {log.type}
                       </span>
                       <span>Target: {log.target}</span>
-                      <span className={`text-[10px] font-bold ${log.status === 'SENT' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      <span className={`text-[10px] font-bold ${
+                        log.status === 'SENT' ? 'text-emerald-600' :
+                        log.status === 'FAILED' ? 'text-rose-600' :
+                        'text-amber-600'
+                      }`}>
                         [{log.status}]
                       </span>
+                      {log.errorDetails && (
+                        <span className="text-[10px] text-rose-500 italic truncate max-w-[200px]" title={log.errorDetails}>
+                          ({log.errorDetails})
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 font-mono">

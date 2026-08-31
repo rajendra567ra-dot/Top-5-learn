@@ -8,7 +8,8 @@ import {
   TradeDirection, 
   BotLearningNote,
   ConsensusStage,
-  MasterPortfolio
+  MasterPortfolio,
+  ConfirmationStrategyMode
 } from './types';
 import { generateTop500Universe } from './data/topCoins';
 import { INITIAL_BOTS } from './data/initialBots';
@@ -22,6 +23,7 @@ import { FleetOverviewCard } from './components/FleetOverviewCard';
 import { StagePerformanceView } from './components/StagePerformanceView';
 import { BotsDashboard } from './components/BotsDashboard';
 import { ActiveTradesView } from './components/ActiveTradesView';
+import { StrategyMatrixSelector } from './components/StrategyMatrixSelector';
 import { MarketScannerView } from './components/MarketScannerView';
 import { MistakeLearningView } from './components/MistakeLearningView';
 import { AuditLogsView } from './components/AuditLogsView';
@@ -105,6 +107,8 @@ export const App: React.FC = () => {
 
   // UI state
   const [activeTab, setActiveTab] = useState<string>('stages');
+  const [activeStrategyMode, setActiveStrategyMode] = useState<ConfirmationStrategyMode>('MULTI_CONFLUENCE');
+  const [isUpdatingStrategy, setIsUpdatingStrategy] = useState<boolean>(false);
   const [is247Running, setIs247RunningState] = useState<boolean>(true);
   const [uptimeSeconds, setUptimeSeconds] = useState<number>(0);
   const [nextSummarySeconds, setNextSummarySeconds] = useState<number>(3600);
@@ -126,6 +130,7 @@ export const App: React.FC = () => {
 
       if (data && data.success) {
         if (data.masterPortfolio) setMasterPortfolio(data.masterPortfolio);
+        if (data.activeStrategyMode) setActiveStrategyMode(data.activeStrategyMode);
         if (Array.isArray(data.bots) && data.bots.length > 0) setBots(data.bots);
         if (Array.isArray(data.activeTrades)) setActiveTrades(deduplicateById(data.activeTrades));
         if (Array.isArray(data.auditLogs)) setAuditLogs(deduplicateById(data.auditLogs));
@@ -210,6 +215,25 @@ export const App: React.FC = () => {
       console.error('Error toggling 24/7 engine:', e);
     }
   };
+
+  const handleSelectStrategy = useCallback(async (mode: ConfirmationStrategyMode) => {
+    setActiveStrategyMode(mode);
+    setIsUpdatingStrategy(true);
+    try {
+      const res = await fetch('/api/fleet/strategy/set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      if (res.ok) {
+        syncServerFleetState();
+      }
+    } catch (e) {
+      console.error('Error updating confirmation strategy:', e);
+    } finally {
+      setIsUpdatingStrategy(false);
+    }
+  }, [syncServerFleetState]);
 
   const handleCloseTrade = useCallback(async (tradeId: string) => {
     try {
@@ -367,7 +391,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleTestTelegramConnection = async (token: string, chatId: string): Promise<boolean> => {
+  const handleTestTelegramConnection = async (token: string, chatId: string): Promise<{ success: boolean; message: string }> => {
     try {
       const res = await fetch('/api/telegram/test', {
         method: 'POST',
@@ -375,13 +399,19 @@ export const App: React.FC = () => {
         body: JSON.stringify({ token, chatId }),
       });
       const data = await res.json();
+      await syncServerFleetState();
       if (data.success) {
-        await syncServerFleetState();
-        return true;
+        return { success: true, message: data.message || '✅ Connection successful! Test message dispatched to your Telegram.' };
       }
-      return false;
-    } catch {
-      return false;
+      return { 
+        success: false, 
+        message: data.error || '❌ Verification failed. Please check your Telegram Bot Token and Chat ID.' 
+      };
+    } catch (err: any) {
+      return { 
+        success: false, 
+        message: `Network error: ${err?.message || 'Failed to reach backend server'}` 
+      };
     }
   };
 
@@ -471,6 +501,7 @@ export const App: React.FC = () => {
         {activeTab === 'trades' && (
           <ActiveTradesView
             activeTrades={activeTrades}
+            bots={bots}
             onCloseTrade={handleCloseTrade}
             onAskBrainRationale={async (trade) => {
               try {
@@ -500,6 +531,15 @@ export const App: React.FC = () => {
                 console.error(e);
               }
             }}
+          />
+        )}
+
+        {/* Tab: Confirmation Strategy & Multi-Indicator Confluence */}
+        {activeTab === 'strategy' && (
+          <StrategyMatrixSelector
+            activeStrategy={activeStrategyMode}
+            onSelectStrategy={handleSelectStrategy}
+            isUpdatingStrategy={isUpdatingStrategy}
           />
         )}
 

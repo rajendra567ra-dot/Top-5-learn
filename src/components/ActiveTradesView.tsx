@@ -41,6 +41,7 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
   const [selectedStageFilter, setSelectedStageFilter] = useState<ConsensusStage | 'ALL'>('ALL');
   const [expandedTimelineTradeId, setExpandedTimelineTradeId] = useState<string | null>(null);
   const [expandedTeacherTradeId, setExpandedTeacherTradeId] = useState<string | null>(null);
+  const [expandedMatrixTradeId, setExpandedMatrixTradeId] = useState<string | null>(null);
 
   const filteredTrades = selectedStageFilter === 'ALL'
     ? activeTrades
@@ -360,6 +361,71 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {/* ADVANCED CONFIRMATION MATRIX & MULTI-INDICATOR VALIDATION */}
+                  {trade.confirmationMatrix && (
+                    <div className="mt-3 p-3.5 rounded-xl bg-slate-900 text-white text-xs border border-slate-800">
+                      <div className="flex items-center justify-between font-bold mb-2">
+                        <span className="flex items-center gap-1.5 text-[11px] text-cyan-400 uppercase tracking-wide">
+                          <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                          Indicator Confluence: {trade.confirmationMatrix.confluenceScore}% Score
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800">
+                            {trade.confirmationMatrix.confirmedCount}/{trade.confirmationMatrix.totalEvaluated} Validated
+                          </span>
+                          <button
+                            onClick={() => setExpandedMatrixTradeId(expandedMatrixTradeId === trade.id ? null : trade.id)}
+                            className="text-slate-400 hover:text-white font-mono text-[10px] flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <span>{expandedMatrixTradeId === trade.id ? 'Hide Matrix' : 'View Indicators'}</span>
+                            <ChevronDown className={`w-3 h-3 transition-transform ${expandedMatrixTradeId === trade.id ? 'rotate-180' : ''}`} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-300 font-mono bg-slate-800/80 p-2 rounded-lg border border-slate-700">
+                        <span>Strategy: <strong className="text-white">{trade.confirmationMatrix.strategyName}</strong></span>
+                        <span className="text-amber-300">Regime: {trade.confirmationMatrix.marketRegime}</span>
+                      </div>
+
+                      {expandedMatrixTradeId === trade.id && (
+                        <div className="mt-2.5 pt-2.5 border-t border-slate-800 space-y-1.5 font-mono text-[11px]">
+                          {trade.confirmationMatrix.indicators.map((ind, ii) => (
+                            <div 
+                              key={ii} 
+                              className={`p-2 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-1 ${
+                                ind.confirmed 
+                                  ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300' 
+                                  : 'bg-slate-800/40 border-slate-700/50 text-slate-400'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                {ind.confirmed ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                ) : (
+                                  <span className="w-3.5 h-3.5 rounded-full border border-slate-500 shrink-0 inline-block" />
+                                )}
+                                <span className="font-bold text-slate-200">{ind.name}</span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">{ind.category}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] sm:text-right">
+                                <span className="text-slate-300">{ind.value}</span>
+                                <span className={`font-bold px-1.5 py-0.2 rounded ${
+                                  ind.signal === 'BULLISH' ? 'bg-emerald-900 text-emerald-200' : ind.signal === 'BEARISH' ? 'bg-rose-900 text-rose-200' : 'bg-slate-700 text-slate-300'
+                                }`}>
+                                  {ind.signal}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="text-[10px] text-slate-400 italic pt-1">
+                            Primary Trigger: {trade.confirmationMatrix.primaryTrigger}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* TEACHER-STYLE EXPLANATION DRAWER */}
                   {trade.teacherExplanation ? (
