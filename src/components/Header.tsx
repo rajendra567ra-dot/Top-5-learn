@@ -71,7 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2.5">
                 <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 font-sans">
-                  NEXUS FIVE <span className="text-blue-600 font-medium">• CONSENSUS FLEET</span>
+                  NEXUS FLEET <span className="text-blue-600 font-medium">• 10-BOT CONSENSUS</span>
                 </h1>
                 <div 
                   id="live-status-indicator" 
@@ -86,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               </div>
               <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-0.5">
-                Multi-Bot Staged Consensus Execution • $1,000 Master Portfolio • Self-Evolving AI
+                10-Bot Quorum (6+ Confirmations) • 9+/10 Indicators • 3x-8x Safe Leverage • $1,000 Capital Base
               </p>
             </div>
           </div>
@@ -184,7 +184,7 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
-          {/* Tab: 5 Specialist Bots */}
+          {/* Tab: 10 Specialist Bots */}
           <button
             id="tab-bots-btn"
             onClick={() => setActiveTab('bots')}
@@ -195,10 +195,10 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Bot className={`w-3.5 h-3.5 ${activeTab === 'bots' ? 'text-blue-400' : 'text-slate-400'}`} />
-            <span>5 Specialist Consensus Brains</span>
+            <span>10 Specialist Consensus Brains</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
               activeTab === 'bots' ? 'bg-slate-800 text-blue-300' : 'bg-slate-100 text-slate-600'
-            }`}>5</span>
+            }`}>{bots.length || 10}</span>
           </button>
 
           {/* Tab: Top 500 Market Scanner */}

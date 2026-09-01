@@ -126,7 +126,7 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                   className="w-2 h-2 rounded-full" 
                   style={{ backgroundColor: config.accentColor }} 
                 />
-                <span>Stage {stg} ({stg} Bot{stg > 1 ? 's' : ''})</span>
+                <span>Stage {stg} ({config.botsRequired})</span>
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   isSelected ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-600'
                 }`}>
@@ -275,6 +275,12 @@ export const ActiveTradesView: React.FC<ActiveTradesViewProps> = ({
                       <div className="text-[10px] text-rose-600 font-medium">
                         {trade.slMode === 'BREAKEVEN' ? '🛡️ 100% Risk-Free' : trade.slMode === 'TRAILING_STRUCTURE' ? '⚡ Trailing' : `Max -$${trade.maxLossUsd?.toFixed(2) || '2.50'}`}
                       </div>
+                      {trade.liquidationPrice && (
+                        <div className="text-[9px] text-slate-500 font-mono mt-0.5 border-t border-rose-200/60 pt-0.5 flex items-center justify-between">
+                          <span>Liq: ${trade.liquidationPrice}</span>
+                          <span className="text-emerald-700 font-bold">SL &lt; Liq 🛡️</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* 4. Live PnL & PnL Percentage (%) */}

@@ -46,14 +46,14 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2 font-sans">
               <Bot className="w-5 h-5 text-blue-600" />
-              5 Specialist Consensus Brains ($1,000 Master Fleet)
+              10 Specialist Consensus Brains ($1,000 Master Fleet)
             </h2>
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-              Unlimited Concurrent Trading
+              6+/10 Quorum Required
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1 max-w-3xl">
-            Each bot operates as an autonomous signal generator and validation engine. When a setup occurs, bots cross-confirm the signal to determine entry stage (1 to 5). Bots trade freely without arbitrary position limits.
+            Each of the 10 bots operates as a specialist quant engine (Breakout, Exhaustion, CVD Orderflow, Micro-Scalp, Neural Sentiment, SMC Structure, Volatility Squeeze, 200 EMA Macro, Mean Reversion, Liquidity Sweep). Live trades execute strictly when 6 or more bots confirm with 9+/10 indicator confluence.
           </p>
         </div>
 

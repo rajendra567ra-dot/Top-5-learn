@@ -27,6 +27,7 @@ interface MistakeLearningViewProps {
   masterPortfolio?: MasterPortfolio;
   auditLogs?: TradePosition[];
   onTriggerGeminiPostMortem: (botId: string, customMistakeText?: string) => Promise<void>;
+  onAdaptStrategy?: () => Promise<void>;
 }
 
 export const MistakeLearningView: React.FC<MistakeLearningViewProps> = ({
@@ -34,9 +35,11 @@ export const MistakeLearningView: React.FC<MistakeLearningViewProps> = ({
   masterPortfolio,
   auditLogs = [],
   onTriggerGeminiPostMortem,
+  onAdaptStrategy,
 }) => {
   const [selectedBotFilter, setSelectedBotFilter] = useState<string>('ALL');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isAdapting, setIsAdapting] = useState(false);
   const [scenarioPrompt, setScenarioPrompt] = useState('');
   const [activeSubTab, setActiveSubTab] = useState<'comparison' | 'heuristics' | 'simulator'>('comparison');
 
@@ -64,6 +67,22 @@ export const MistakeLearningView: React.FC<MistakeLearningViewProps> = ({
       setScenarioPrompt('');
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleRunAdaptStrategy = async () => {
+    if (isAdapting) return;
+    setIsAdapting(true);
+    try {
+      if (onAdaptStrategy) {
+        await onAdaptStrategy();
+      } else {
+        await fetch('/api/ai/adapt-strategy', { method: 'POST' });
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsAdapting(false);
     }
   };
 
@@ -115,10 +134,25 @@ export const MistakeLearningView: React.FC<MistakeLearningViewProps> = ({
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center font-mono shrink-0">
-            <div className="text-[10px] text-slate-400 uppercase font-bold">Total Mistakes Learned & Repaired</div>
-            <div className="text-2xl font-black text-purple-700 mt-0.5">{allNotes.length} Adaptations</div>
-            <div className="text-[10px] text-emerald-700 font-bold mt-0.5">Live Rules Active in 24/7 Engine</div>
+          <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center font-mono shrink-0">
+              <div className="text-[10px] text-slate-400 uppercase font-bold">Total Mistakes Learned & Repaired</div>
+              <div className="text-2xl font-black text-purple-700 mt-0.5">{allNotes.length} Adaptations</div>
+              <div className="text-[10px] text-emerald-700 font-bold mt-0.5">Live Rules Active in 24/7 Engine</div>
+            </div>
+
+            <button
+              id="adapt-strategy-btn"
+              onClick={handleRunAdaptStrategy}
+              disabled={isAdapting}
+              className="px-4 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Sparkles className={`w-4 h-4 text-purple-200 ${isAdapting ? 'animate-spin' : ''}`} />
+              <div className="text-left">
+                <div>{isAdapting ? 'Evolving Fleet...' : 'Adapt & Improve Strategy'}</div>
+                <div className="text-[10px] text-purple-200 font-normal">Gemini Multi-Bot Review</div>
+              </div>
+            </button>
           </div>
         </div>
 

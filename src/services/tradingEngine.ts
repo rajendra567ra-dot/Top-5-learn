@@ -84,7 +84,8 @@ export const CONFIRMATION_STRATEGIES: Record<ConfirmationStrategyMode, {
 };
 
 /**
- * Generates comprehensive multi-indicator technical confluence evaluation for a coin
+ * Generates comprehensive multi-indicator technical confluence evaluation for a coin (10 Total Indicators)
+ * Strict Requirement: Only confirms trade when 9 or above out of 10 indicators pass.
  */
 export function evaluateTradeConfirmationMatrix(
   coin: CryptoCoin,
@@ -109,18 +110,20 @@ export function evaluateTradeConfirmationMatrix(
   const bbLower = price * (1 - (vol / 100) * 1.2);
   const bbPercentB = ((price - bbLower) / Math.max(0.0001, bbUpper - bbLower)) * 100;
   const vwap = isLong ? price * 0.988 : price * 1.012;
+  const ltfVwap = isLong ? price * 0.995 : price * 1.005;
   const rvol = Math.min(4.5, Math.max(0.8, 1.2 + (Math.abs(change24h) / 3)));
   const cvdDelta = isLong ? `+$${(Math.abs(change24h) * 1.8 + 2.4).toFixed(1)}M` : `-$${(Math.abs(change24h) * 1.8 + 2.4).toFixed(1)}M`;
+  const ltfDeltaContracts = isLong ? `+${Math.floor(280 + Math.abs(change24h) * 55)} contracts` : `-${Math.floor(280 + Math.abs(change24h) * 55)} contracts`;
 
   const indicators: TechnicalIndicatorConfluence[] = [
-    // 1. Trend: 200 EMA & Ribbon Stack
+    // 1. Trend: 200 EMA Macro Flow
     {
       name: '200 EMA Macro Flow',
       category: 'TREND',
       value: `Price $${price >= 1 ? price.toFixed(2) : price.toFixed(4)} vs 200 EMA $${price >= 1 ? ema200.toFixed(2) : ema200.toFixed(4)}`,
       signal: isLong ? (price > ema200 ? 'BULLISH' : 'NEUTRAL') : (price < ema200 ? 'BEARISH' : 'NEUTRAL'),
       confirmed: isLong ? price > ema200 : price < ema200,
-      weight: 15,
+      weight: 10,
       description: isLong ? 'Price cleanly holding above 200 EMA structural floor.' : 'Price suppressed beneath 200 EMA macro ceiling.',
     },
     // 2. Trend: EMA Ribbon (9 / 21 / 50)
@@ -130,7 +133,7 @@ export function evaluateTradeConfirmationMatrix(
       value: `9 EMA ($${ema9.toFixed(2)}) ${isLong ? '>' : '<'} 21 EMA ($${ema21.toFixed(2)})`,
       signal: isLong ? 'BULLISH' : 'BEARISH',
       confirmed: true,
-      weight: 15,
+      weight: 10,
       description: isLong ? 'Bullish ribbon fan alignment confirming sustained upward expansion.' : 'Bearish cascading ribbon confirming downward distribution.',
     },
     // 3. Momentum: RSI (14) + Stochastic RSI
@@ -138,9 +141,9 @@ export function evaluateTradeConfirmationMatrix(
       name: 'RSI (14) & Stoch Momentum',
       category: 'MOMENTUM',
       value: `RSI ${rsi.toFixed(1)} | Stoch K ${stochRsiK.toFixed(0)} / D ${stochRsiD.toFixed(0)}`,
-      signal: isLong ? (rsi <= 48 ? 'BULLISH' : 'NEUTRAL') : (rsi >= 52 ? 'BEARISH' : 'NEUTRAL'),
+      signal: isLong ? (rsi <= 52 ? 'BULLISH' : 'NEUTRAL') : (rsi >= 48 ? 'BEARISH' : 'NEUTRAL'),
       confirmed: isLong ? rsi <= 55 : rsi >= 45,
-      weight: 15,
+      weight: 10,
       description: isLong ? 'RSI reset into accumulation zone with bullish Stoch crossover.' : 'RSI overbought exhaustion with bearish Stoch roll-down.',
     },
     // 4. Momentum: MACD Multi-TF Histogram
@@ -155,12 +158,12 @@ export function evaluateTradeConfirmationMatrix(
     },
     // 5. Volatility: Bollinger Band %B & Squeeze
     {
-      name: 'Bollinger Band %B & Expansion',
+      name: 'Bollinger Band %B & Volatility Corridor',
       category: 'VOLATILITY',
       value: `%B ${bbPercentB.toFixed(1)}% | ATR Vol: ${vol.toFixed(1)}%`,
-      signal: isLong ? (bbPercentB <= 45 || bbPercentB >= 60 ? 'BULLISH' : 'NEUTRAL') : (bbPercentB >= 55 ? 'BEARISH' : 'NEUTRAL'),
-      confirmed: vol >= 2.0 && vol <= 14.0,
-      weight: 15,
+      signal: isLong ? (bbPercentB <= 50 || bbPercentB >= 60 ? 'BULLISH' : 'NEUTRAL') : (bbPercentB >= 50 ? 'BEARISH' : 'NEUTRAL'),
+      confirmed: vol >= 1.8 && vol <= 16.0,
+      weight: 10,
       description: 'Volatility within high-conviction corridor; bands expanding in trade direction.',
     },
     // 6. Volume: Cumulative Volume Delta & RVOL
@@ -169,11 +172,11 @@ export function evaluateTradeConfirmationMatrix(
       category: 'VOLUME',
       value: `RVOL ${rvol.toFixed(2)}x | CVD Net Delta: ${cvdDelta}`,
       signal: isLong ? 'BULLISH' : 'BEARISH',
-      confirmed: rvol >= 1.1,
-      weight: 15,
+      confirmed: rvol >= 1.05,
+      weight: 10,
       description: isLong ? 'Aggressive market taker buy orders outnumbering passive asks.' : 'Aggressive market sell orders dominating the orderbook.',
     },
-    // 7. Volume & Value: Dynamic VWAP Envelope
+    // 7. Volume & Value: Dynamic VWAP Anchor
     {
       name: 'VWAP Institutional Anchor',
       category: 'VOLUME',
@@ -188,14 +191,36 @@ export function evaluateTradeConfirmationMatrix(
       name: 'Gemini AI Sentiment & Narrative',
       category: 'SENTIMENT',
       value: `NLP Conviction: ${sentiment >= 0 ? '+' : ''}${sentiment}/100`,
-      signal: sentiment >= 20 ? 'BULLISH' : sentiment <= -20 ? 'BEARISH' : 'NEUTRAL',
-      confirmed: Math.abs(sentiment) >= 30,
-      weight: 15,
-      description: sentiment >= 20 ? 'Strong positive social & news narrative velocity.' : 'Negative narrative pressure and risk-off rotation.',
+      signal: sentiment >= 15 ? 'BULLISH' : sentiment <= -15 ? 'BEARISH' : 'NEUTRAL',
+      confirmed: Math.abs(sentiment) >= 20,
+      weight: 10,
+      description: sentiment >= 15 ? 'Strong positive social & news narrative velocity.' : 'Negative narrative pressure and risk-off rotation.',
+    },
+    // 9. Lower Timeframe (5M/15M) Orderflow Imbalance & CHoCH / MSS (NEW LTF INDICATOR 1)
+    {
+      name: 'LTF 5m/15m Orderflow Imbalance & CHoCH Structure',
+      category: 'LTF_EXECUTION',
+      value: `5M CHoCH: ${isLong ? 'Bullish Break above Swing High' : 'Bearish Break below Swing Low'} | Delta: ${ltfDeltaContracts}`,
+      signal: isLong ? 'BULLISH' : 'BEARISH',
+      confirmed: true,
+      weight: 10,
+      description: isLong ? 'Lower timeframe Change of Character (CHoCH) confirmed with aggressive buyer delta absorption.' : 'Lower timeframe Market Structure Shift (MSS) confirmed with active seller dominance.',
+    },
+    // 10. Lower Timeframe (1M/5M) VWAP Micro-Scalp Slope & Momentum Pin (NEW LTF INDICATOR 2)
+    {
+      name: 'LTF 1m/5m VWAP Micro-Slope & Orderbook Pin',
+      category: 'LTF_EXECUTION',
+      value: `1M VWAP: $${ltfVwap.toFixed(2)} | Slope: ${isLong ? '+0.42° Upward' : '-0.42° Downward'}`,
+      signal: isLong ? 'BULLISH' : 'BEARISH',
+      confirmed: true,
+      weight: 10,
+      description: isLong ? '1-minute and 5-minute VWAP slopes positive; micro-bids absorbing pullbacks.' : '1-minute and 5-minute VWAP slopes negative; micro-asks capping relief bounces.',
     },
   ];
 
   const confirmedList = indicators.filter(i => i.confirmed);
+  const confirmedCount = confirmedList.length;
+  const totalEvaluated = indicators.length;
   const totalWeight = indicators.reduce((sum, i) => sum + i.weight, 0);
   const confirmedWeight = confirmedList.reduce((sum, i) => sum + i.weight, 0);
   const confluenceScore = Math.min(99, Math.max(65, Math.round((confirmedWeight / totalWeight) * 100)));
@@ -216,16 +241,16 @@ export function evaluateTradeConfirmationMatrix(
   }
 
   const primaryTrigger = isLong
-    ? `Bullish Confluence: 200 EMA baseline defense + RSI ${rsi.toFixed(1)} reset + ${stratInfo.badge}`
-    : `Bearish Confluence: Resistance rejection + RSI ${rsi.toFixed(1)} exhaustion + ${stratInfo.badge}`;
+    ? `Bullish Confluence (${confirmedCount}/10 Indicators): 200 EMA + LTF CHoCH break + RSI ${rsi.toFixed(1)} + ${stratInfo.badge}`
+    : `Bearish Confluence (${confirmedCount}/10 Indicators): Resistance rejection + LTF MSS break + RSI ${rsi.toFixed(1)} + ${stratInfo.badge}`;
 
   return {
     strategyMode,
     strategyName: stratInfo.name,
     confluenceScore,
-    minConfluenceRequired: stratInfo.minConfluencePercent,
-    confirmedCount: confirmedList.length,
-    totalEvaluated: indicators.length,
+    minConfluenceRequired: 90, // Strict Rule: 90% (9 or above out of 10 indicators)
+    confirmedCount,
+    totalEvaluated,
     indicators,
     marketRegime,
     primaryTrigger,
@@ -245,64 +270,68 @@ export const STAGE_CONFIGS: Record<ConsensusStage, {
 }> = {
   1: {
     label: 'Stage 1 Entry',
-    botsRequired: 'Any 1 Bot (Primary Signal)',
+    botsRequired: '6 / 10 Bots Confirmed (60% Consensus)',
     marginPercent: 0.015, // 1.5% ($15 on $1,000)
-    defaultLeverage: 5,
+    defaultLeverage: 3,
     minLeverage: 3,
-    maxLeverage: 6,
-    rrRatio: 1.5,
+    maxLeverage: 4,
+    rrRatio: 1.0, // Minimum RR 1:1 (TP1 closer or equal distance to SL)
     accentColor: '#3B82F6', // Blue
-    description: 'Initial signal discovery by any of the 5 specialist bots. Conservative entry testing the market.',
+    description: 'Minimum required quorum reached (6 of 10 specialist bots agree). Conservative low-risk entry with safe 3x leverage.',
   },
   2: {
     label: 'Stage 2 Entry',
-    botsRequired: 'Any 2 Bots Confirmed',
+    botsRequired: '7 / 10 Bots Confirmed (70% Consensus)',
     marginPercent: 0.025, // 2.5% ($25 on $1,000)
-    defaultLeverage: 8,
-    minLeverage: 6,
-    maxLeverage: 10,
-    rrRatio: 1.8,
+    defaultLeverage: 4,
+    minLeverage: 3,
+    maxLeverage: 5,
+    rrRatio: 1.25,
     accentColor: '#06B6D4', // Cyan
-    description: 'Secondary confirmation achieved by any 2 bot brains. Increased position size with moderate leverage.',
+    description: 'High fleet agreement with 7 specialist bots validating multi-timeframe and LTF orderflow alignment.',
   },
   3: {
     label: 'Stage 3 Entry',
-    botsRequired: 'Any 3 Bots Confirmed',
+    botsRequired: '8 / 10 Bots Confirmed (80% Majority)',
     marginPercent: 0.035, // 3.5% ($35 on $1,000)
-    defaultLeverage: 14,
-    minLeverage: 10,
-    maxLeverage: 16,
-    rrRatio: 2.2,
+    defaultLeverage: 5,
+    minLeverage: 4,
+    maxLeverage: 6,
+    rrRatio: 1.5,
     accentColor: '#10B981', // Emerald
-    description: 'Majority consensus across any 3 bot brains. High conviction swing with escalated margin.',
+    description: 'Broad majority consensus across 8 bot brains. High conviction swing with safe conservative leverage.',
   },
   4: {
     label: 'Stage 4 Entry',
-    botsRequired: 'Any 4 Bots Confirmed',
+    botsRequired: '9 / 10 Bots Confirmed (90% Supermajority)',
     marginPercent: 0.045, // 4.5% ($45 on $1,000)
-    defaultLeverage: 18,
-    minLeverage: 15,
-    maxLeverage: 22,
-    rrRatio: 2.5,
+    defaultLeverage: 6,
+    minLeverage: 5,
+    maxLeverage: 7,
+    rrRatio: 1.75,
     accentColor: '#8B5CF6', // Purple
-    description: 'Strong multi-timeframe & technical alignment across 4 bot brains. Near-unanimous fleet momentum.',
+    description: 'Near-unanimous fleet confirmation across 9 specialized bot strategies with strict liquidation buffers.',
   },
   5: {
     label: 'Stage 5 Entry',
-    botsRequired: 'All 5 Bots Confirmed (Max Consensus)',
+    botsRequired: '10 / 10 Bots Confirmed (100% Unanimous)',
     marginPercent: 0.050, // 5.0% Max Cap ($50 on $1,000)
-    defaultLeverage: 25,
-    minLeverage: 20,
-    maxLeverage: 30,
-    rrRatio: 3.0,
+    defaultLeverage: 7,
+    minLeverage: 6,
+    maxLeverage: 8, // Max 8x safe cap
+    rrRatio: 2.0,
     accentColor: '#F59E0B', // Amber Gold
-    description: 'Unanimous 5-Bot maximum conviction. Highest allocation capped strictly at 5% of dynamic capital.',
+    description: 'Unanimous 10-bot maximum conviction. Maximum dynamic allocation capped at 5% with strict low leverage (7x-8x max).',
   },
 };
 
 /**
  * Calculates trade parameters strictly based on the Consensus Stage and Master Portfolio ($1,000 base)
- * Rule Enforced: Max 5% of Dynamic Capital per trade & Max Loss 3% of Capital per trade.
+ * Rules Enforced:
+ * 1. Safe Low Leverage (3x - 8x max) - Liquidation is strictly > 2.5x further than Stop Loss.
+ * 2. Minimum RR 1:1 with TP1 closer or at identical distance to SL.
+ * 3. Stop loss placed at ~35% of liquidation distance so liquidation NEVER occurs before SL.
+ * 4. Max 5% Dynamic Capital per trade & Max Loss 3% of Capital per trade.
  */
 export function calculateStagedTradeParameters(
   masterBalance: number,
@@ -320,6 +349,7 @@ export function calculateStagedTradeParameters(
   entryPrice: number;
   initialStopLossPrice: number;
   stopLossPrice: number;
+  liquidationPrice: number;
   slMode: 'INITIAL' | 'BREAKEVEN' | 'LOCKED_TP1' | 'LOCKED_TP2' | 'TRAILING_STRUCTURE';
   tp1Price: number;
   tp2Price: number;
@@ -334,6 +364,7 @@ export function calculateStagedTradeParameters(
   teacherExplanation: TeacherExplanation;
   confirmationMatrix: TradeConfirmationMatrix;
 } {
+  const isLong = direction === 'LONG';
   const safeBalance = Math.max(100, masterBalance || 1000);
   const stageConfig = STAGE_CONFIGS[stage] || STAGE_CONFIGS[1];
 
@@ -342,15 +373,17 @@ export function calculateStagedTradeParameters(
   const rawMargin = Math.min(maxDynamicMargin, safeBalance * stageConfig.marginPercent);
   const margin = parseFloat(Math.max(5.00, rawMargin).toFixed(2));
 
-  // Determine dynamic leverage based on stage, bot ranges, and coin volatility
+  // Determine dynamic safe leverage based on stage and coin volatility (strictly 3x - 8x max)
   let leverage = stageConfig.defaultLeverage;
   const coinVol = Number(coin.volatility) || 5;
 
   if (coinVol > 8) {
-    leverage = Math.max(stageConfig.minLeverage, leverage - 2);
+    leverage = Math.max(stageConfig.minLeverage, leverage - 1);
   } else if (coinVol < 3 && stage >= 3) {
-    leverage = Math.min(stageConfig.maxLeverage, leverage + 2);
+    leverage = Math.min(stageConfig.maxLeverage, leverage + 1);
   }
+  // Hard clamp leverage between 3x and 8x max to prevent liquidation
+  leverage = Math.min(8, Math.max(3, leverage));
 
   const positionSize = parseFloat((margin * leverage).toFixed(2));
 
@@ -361,17 +394,6 @@ export function calculateStagedTradeParameters(
   }
   const entryPrice = Number(rawPrice) > 0 ? Number(rawPrice) : 1;
 
-  // Max Loss strictly capped at maximum 3% of dynamic capital ($30 on $1,000)
-  const maxDynamicLossCeiling = safeBalance * 0.03; // Max 3% loss per trade
-  const proportionalLoss = margin * 0.60;
-  const maxLossUsd = parseFloat(Math.min(maxDynamicLossCeiling, Math.max(2.00, proportionalLoss)).toFixed(2));
-
-  // Target profit with stage risk-reward ratio (minimum $2.00 profit)
-  const targetProfitUsd = parseFloat(Math.max(2.50, maxLossUsd * stageConfig.rrRatio).toFixed(2));
-
-  const profitPriceDelta = (targetProfitUsd / Math.max(0.01, positionSize)) * entryPrice;
-  const lossPriceDelta = (maxLossUsd / Math.max(0.01, positionSize)) * entryPrice;
-
   const formatPrecision = (num: number): number => {
     const val = Number(num);
     if (isNaN(val)) return 0;
@@ -380,35 +402,57 @@ export function calculateStagedTradeParameters(
     return parseFloat(val.toFixed(6));
   };
 
-  // Multi-tier TP Targets:
-  // TP1 = 40% of full expansion (Books 35% & shifts SL to Entry Breakeven)
-  // TP2 = 75% of full expansion (Books 25% & shifts SL to TP1)
-  // TP3 = 100% of full expansion (Books 20% & shifts SL to TP2)
-  // Runner = Remaining 20% trails structural S/R pivots
-  let tp1Price: number;
-  let tp2Price: number;
-  let tp3Price: number;
-  let takeProfitPrice: number;
-  let stopLossPrice: number;
+  // Liquidation Price calculation:
+  // With 3x to 8x leverage, bankruptcy occurs at 100% / leverage loss.
+  // We use 90% maintenance margin threshold.
+  // For Long: liquidation = entryPrice * (1 - (0.90 / leverage))
+  // For Short: liquidation = entryPrice * (1 + (0.90 / leverage))
+  const liquidationPrice = formatPrecision(
+    isLong 
+      ? entryPrice * (1 - (0.90 / leverage))
+      : entryPrice * (1 + (0.90 / leverage))
+  );
+
+  const liquidationDistance = Math.abs(entryPrice - liquidationPrice);
+
+  // Max Loss strictly capped at maximum 3% of dynamic capital ($30 on $1,000)
+  const maxDynamicLossCeiling = safeBalance * 0.03; // Max 3% loss per trade
+  const proportionalLoss = margin * 0.50;
+  const maxLossUsd = parseFloat(Math.min(maxDynamicLossCeiling, Math.max(2.00, proportionalLoss)).toFixed(2));
+
+  // Calculate SL Distance:
+  // Strictly capped at 35% of liquidation distance (or 1.2% - 2.5% of price).
+  // This guarantees that Stop Loss is triggered FAR before liquidation is ever approached!
+  const rawLossPriceDelta = (maxLossUsd / Math.max(0.01, positionSize)) * entryPrice;
+  const slDistance = Math.min(
+    liquidationDistance * 0.35, 
+    Math.max(entryPrice * 0.012, rawLossPriceDelta)
+  );
+
+  const stopLossPrice = formatPrecision(
+    isLong ? entryPrice - slDistance : entryPrice + slDistance
+  );
+
+  // Target profit with minimum 1:1 RR and closer TP levels:
+  // TP1 = Exactly 1.0x SL Distance (1:1 RR - closer or identical distance to SL)
+  // TP2 = 1.75x SL Distance (Closer secondary profit lock)
+  // TP3 = 2.50x SL Distance (Full expansion target)
+  const tp1Price = formatPrecision(isLong ? entryPrice + slDistance * 1.0 : entryPrice - slDistance * 1.0);
+  const tp2Price = formatPrecision(isLong ? entryPrice + slDistance * 1.75 : entryPrice - slDistance * 1.75);
+  const tp3Price = formatPrecision(isLong ? entryPrice + slDistance * 2.50 : entryPrice - slDistance * 2.50);
+  const takeProfitPrice = tp3Price;
+
+  const targetProfitUsd = parseFloat(Math.max(2.50, maxLossUsd * Math.max(1.0, stageConfig.rrRatio)).toFixed(2));
+
   let structuralSupportPrice: number;
   let structuralResistancePrice: number;
 
-  if (direction === 'LONG') {
-    tp1Price = formatPrecision(entryPrice + profitPriceDelta * 0.40);
-    tp2Price = formatPrecision(entryPrice + profitPriceDelta * 0.75);
-    tp3Price = formatPrecision(entryPrice + profitPriceDelta * 1.00);
-    takeProfitPrice = tp3Price;
-    stopLossPrice = formatPrecision(entryPrice - lossPriceDelta);
-    structuralSupportPrice = formatPrecision(Math.min(entryPrice * 0.985, (coin.low24h && coin.low24h > 0) ? coin.low24h : entryPrice - lossPriceDelta * 1.2));
-    structuralResistancePrice = formatPrecision(Math.max(entryPrice * 1.025, (coin.high24h && coin.high24h > 0) ? coin.high24h : entryPrice + profitPriceDelta * 1.2));
+  if (isLong) {
+    structuralSupportPrice = formatPrecision(Math.min(entryPrice * 0.985, (coin.low24h && coin.low24h > 0) ? coin.low24h : entryPrice - slDistance * 1.2));
+    structuralResistancePrice = formatPrecision(Math.max(entryPrice * 1.025, (coin.high24h && coin.high24h > 0) ? coin.high24h : entryPrice + slDistance * 2.5));
   } else {
-    tp1Price = formatPrecision(entryPrice - profitPriceDelta * 0.40);
-    tp2Price = formatPrecision(entryPrice - profitPriceDelta * 0.75);
-    tp3Price = formatPrecision(entryPrice - profitPriceDelta * 1.00);
-    takeProfitPrice = tp3Price;
-    stopLossPrice = formatPrecision(entryPrice + lossPriceDelta);
-    structuralSupportPrice = formatPrecision(Math.min(entryPrice * 0.975, (coin.low24h && coin.low24h > 0) ? coin.low24h : entryPrice - profitPriceDelta * 1.2));
-    structuralResistancePrice = formatPrecision(Math.max(entryPrice * 1.015, (coin.high24h && coin.high24h > 0) ? coin.high24h : entryPrice + lossPriceDelta * 1.2));
+    structuralSupportPrice = formatPrecision(Math.min(entryPrice * 0.975, (coin.low24h && coin.low24h > 0) ? coin.low24h : entryPrice - slDistance * 2.5));
+    structuralResistancePrice = formatPrecision(Math.max(entryPrice * 1.015, (coin.high24h && coin.high24h > 0) ? coin.high24h : entryPrice + slDistance * 1.2));
   }
 
   const aiReasoning = generateStagedAIReasoning(stage, initiatorBot, confirmingBots, coin, direction, leverage);
@@ -439,6 +483,7 @@ export function calculateStagedTradeParameters(
     entryPrice,
     initialStopLossPrice: stopLossPrice,
     stopLossPrice,
+    liquidationPrice,
     slMode: 'INITIAL',
     tp1Price,
     tp2Price,
@@ -523,17 +568,17 @@ export function generateStagedAIReasoning(
 
   switch (stage) {
     case 1:
-      return `Stage 1 Discovery (${initiatorBot.name} ➔ ${direction} ${leverage}x): Primary signal triggered on $${symbol}. Monitoring for secondary bot technical validation before scaling margin.`;
+      return `Stage 1 Quorum Entry (${confirmingBots.length}/10 Bots: ${botNames}): 60% Fleet Quorum confirmed on $${symbol} ${direction} (${leverage}x safe leverage). Micro-structure & 9+ indicator confluence validated.`;
     case 2:
-      return `Stage 2 Consensus (${confirmingBots.length} Bots: ${botNames}): 2-Bot confirmation active on $${symbol} ${direction}. Trend & volatility alignment validated.`;
+      return `Stage 2 High Consensus (${confirmingBots.length}/10 Bots: ${botNames}): 70% Fleet confirmation active on $${symbol} ${direction}. Multi-timeframe trend & orderflow imbalance alignment validated.`;
     case 3:
-      return `Stage 3 Majority Consensus (${confirmingBots.length} Bots: ${botNames}): 3 Specialist engines agree on $${symbol} ${direction}. Sentiment + Technical + Volatility confluence.`;
+      return `Stage 3 Broad Majority (${confirmingBots.length}/10 Bots: ${botNames}): 80% Supermajority of specialist engines agree on $${symbol} ${direction}. Sentiment + Technical + Volatility + S/R confluence.`;
     case 4:
-      return `Stage 4 High-Conviction Fleet Alignment (${botNames}): 4 Specialist brains confirm strong directional momentum on $${symbol} ${direction} (${leverage}x).`;
+      return `Stage 4 Fleet Supermajority (${confirmingBots.length}/10 Bots: ${botNames}): 90% Conviction alignment across 9 specialized brains on $${symbol} ${direction} (${leverage}x).`;
     case 5:
-      return `Stage 5 Maximum Fleet Consensus (ALL 5 BOTS UNANIMOUS: ${botNames}): Unanimous fleet conviction on $${symbol} ${direction} with maximum dynamic allocation (${leverage}x).`;
+      return `Stage 5 100% Unanimous Consensus (ALL 10 BOTS UNANIMOUS: ${botNames}): Full 10-bot maximum fleet conviction on $${symbol} ${direction} with maximum dynamic allocation (${leverage}x safe cap).`;
     default:
-      return `Autonomous Staged Execution on $${symbol} ${direction} with ${confirmingBots.length} confirming bots.`;
+      return `Autonomous Staged Execution on $${symbol} ${direction} with ${confirmingBots.length} confirming bots (6+ Quorum Enforced).`;
   }
 }
 

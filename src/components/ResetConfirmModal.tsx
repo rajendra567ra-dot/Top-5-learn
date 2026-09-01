@@ -35,7 +35,7 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
         </p>
 
         <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium">
-          ⚠️ Action cannot be undone. All 5 specialist engines will resume autonomous scanning from $1,000.00 base capital.
+          ⚠️ Action cannot be undone. All 10 specialist engines will resume autonomous scanning from $1,000.00 base capital.
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-2 font-sans">

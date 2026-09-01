@@ -79,7 +79,7 @@ export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
               </div>
               <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                 <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                  5 Signal Engines: Online
+                  {bots.length || 10} Signal Engines: Online
                 </span>
                 <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-blue-50 text-blue-700 border border-blue-200">
                   $1,000 Master Portfolio
@@ -90,7 +90,7 @@ export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                Trades are validated stage-wise (Stages 1-5). Single unified $1,000 capital base with self-learning from bad trades.
+                Trades are validated stage-wise (Stages 1-5, 6+ Quorum). Single unified $1,000 capital base with self-learning from bad trades.
               </p>
             </div>
           </div>

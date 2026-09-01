@@ -305,6 +305,18 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleAdaptStrategy = async () => {
+    try {
+      const res = await fetch('/api/ai/adapt-strategy', { method: 'POST' });
+      const data = await res.json();
+      if (data && data.success) {
+        await syncServerFleetState();
+      }
+    } catch (e) {
+      console.error('Error adapting strategy:', e);
+    }
+  };
+
   const handleRunLiveFleetScan = async () => {
     setIsScanning(true);
     try {
@@ -577,6 +589,7 @@ export const App: React.FC = () => {
             masterPortfolio={masterPortfolio}
             auditLogs={auditLogs}
             onTriggerGeminiPostMortem={handleTriggerGeminiPostMortem}
+            onAdaptStrategy={handleAdaptStrategy}
           />
         )}
 

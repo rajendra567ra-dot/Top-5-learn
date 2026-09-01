@@ -14,7 +14,7 @@ export type ConfirmationStrategyMode =
 
 export interface TechnicalIndicatorConfluence {
   name: string;
-  category: 'TREND' | 'MOMENTUM' | 'VOLATILITY' | 'VOLUME' | 'SENTIMENT';
+  category: 'TREND' | 'MOMENTUM' | 'VOLATILITY' | 'VOLUME' | 'SENTIMENT' | 'LTF_EXECUTION';
   value: string;
   signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   confirmed: boolean;
@@ -112,6 +112,7 @@ export interface TradePosition {
   currentPrice: number;
   initialStopLossPrice: number; // Original hard SL price
   stopLossPrice: number; // Current active SL (Breakeven at TP1, TP1 price at TP2, TP2 at TP3, trailing structure)
+  liquidationPrice: number; // Exact calculated liquidation threshold (strictly far beyond SL)
   slMode: 'INITIAL' | 'BREAKEVEN' | 'LOCKED_TP1' | 'LOCKED_TP2' | 'TRAILING_STRUCTURE';
 
   // Multi-tier TP Targets

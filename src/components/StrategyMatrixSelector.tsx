@@ -45,7 +45,7 @@ export const StrategyMatrixSelector: React.FC<StrategyMatrixSelectorProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1 max-w-3xl">
-            Select the algorithmic confirmation ruleset used by the 24/7 background fleet. Every trade candidate is evaluated across multi-timeframe indicators (200 EMA, RSI, MACD, Bollinger %B, Orderflow CVD, VWAP) before triggering entry stages.
+            Select the algorithmic confirmation ruleset used by the 24/7 background fleet. Every candidate is evaluated across 10 institutional indicators (including 5m/15m Orderflow Imbalance & CHoCH, 1m/5m VWAP Micro-Slope, 200 EMA, RSI, MACD, CVD) and requires at least 9/10 confirmations alongside 6+/10 bot consensus.
           </p>
         </div>
 
