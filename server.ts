@@ -16,10 +16,11 @@ import {
   ConsensusStage, 
   TradeDirection,
   BotLearningNote,
-  ConfirmationStrategyMode
+  ConfirmationStrategyMode,
+  SignalLogEntry
 } from './src/types';
 import { INITIAL_BOTS } from './src/data/initialBots';
-import { INITIAL_ACTIVE_TRADES, INITIAL_AUDIT_LOGS } from './src/data/initialTrades';
+import { INITIAL_ACTIVE_TRADES, INITIAL_AUDIT_LOGS, INITIAL_SIGNAL_LOGS } from './src/data/initialTrades';
 import { generateTop500Universe, isHighDecimalOrBlacklistedCoin } from './src/data/topCoins';
 import { 
   STAGE_CONFIGS,
@@ -44,6 +45,7 @@ interface ServerFleetState {
   bots: TradingBot[];
   activeTrades: TradePosition[];
   auditLogs: TradePosition[];
+  signalLogs: SignalLogEntry[];
   telegramConfig: TelegramConfig;
   telegramLogs: TelegramLog[];
   lastSummaryTimestamp: number;
@@ -62,6 +64,7 @@ const INITIAL_MASTER_PORTFOLIO: MasterPortfolio = {
   totalLosses: 0,
   totalTradesExecuted: 0,
   fleetWinRate: 0.0,
+  averageFleetR: 0.0,
   evolutionGeneration: 1,
   selfLearningAdaptationsCount: 0,
   activeStagedTradesCount: 0,
@@ -111,8 +114,7 @@ function loadPersistedState(): ServerFleetState {
               return {
                 ...initBot,
                 ...existing,
-                maxLeverage: initBot.maxLeverage,
-                minLeverage: initBot.minLeverage,
+                strategyWeight: existing.strategyWeight || initBot.strategyWeight,
                 learningNotes: existing.learningNotes && existing.learningNotes.length > 0 ? existing.learningNotes : initBot.learningNotes,
               };
             }
@@ -131,6 +133,7 @@ function loadPersistedState(): ServerFleetState {
             bots: mergedBots,
             activeTrades: cleanedActiveTrades,
             auditLogs: cleanedAuditLogs,
+            signalLogs: Array.isArray(parsed.signalLogs) && parsed.signalLogs.length > 0 ? parsed.signalLogs : [...INITIAL_SIGNAL_LOGS],
             telegramConfig: parsed.telegramConfig || {
               botToken: process.env.TELEGRAM_BOT_TOKEN || '',
               chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -163,6 +166,7 @@ function loadPersistedState(): ServerFleetState {
     bots: JSON.parse(JSON.stringify(INITIAL_BOTS)),
     activeTrades: sanitizeTradesList(INITIAL_ACTIVE_TRADES),
     auditLogs: [...INITIAL_AUDIT_LOGS],
+    signalLogs: [...INITIAL_SIGNAL_LOGS],
     telegramConfig: {
       botToken: process.env.TELEGRAM_BOT_TOKEN || '',
       chatId: process.env.TELEGRAM_CHAT_ID || '',
@@ -1053,6 +1057,7 @@ async function startServer() {
       bots: fleetState.bots,
       activeTrades: fleetState.activeTrades,
       auditLogs: fleetState.auditLogs,
+      signalLogs: fleetState.signalLogs || [],
       telegramConfig: fleetState.telegramConfig,
       telegramLogs: fleetState.telegramLogs,
     });
@@ -1090,9 +1095,11 @@ async function startServer() {
     }
   });
 
-  // Reset Master Portfolio to clean $1,000 baseline
+  // Reset Master Portfolio to clean $1,000 baseline and start fresh from now
   app.post('/api/fleet/reset', (req, res) => {
     try {
+      fleetState.serverStartedAt = Date.now();
+      fleetState.accumulatedUptimeSeconds = 0;
       fleetState.masterPortfolio = {
         initialBase: 1000.00,
         currentBalance: 1000.00,
@@ -1102,6 +1109,7 @@ async function startServer() {
         totalLosses: 0,
         totalTradesExecuted: 0,
         fleetWinRate: 0.0,
+        averageFleetR: 0.0,
         evolutionGeneration: 1,
         selfLearningAdaptationsCount: 0,
         activeStagedTradesCount: 0,
@@ -1109,17 +1117,39 @@ async function startServer() {
 
       fleetState.activeTrades = [];
       fleetState.auditLogs = [];
+      fleetState.signalLogs = [];
       fleetState.bots = JSON.parse(JSON.stringify(INITIAL_BOTS));
+      fleetState.telegramLogs = [
+        {
+          id: `tg-reset-${Date.now()}`,
+          timestamp: Date.now(),
+          type: 'SYSTEM',
+          target: '@CryptoFleetBot',
+          message: `🔄 *[SYSTEM RESET - STARTING FRESH FROM NOW]*\n• Baseline Capital: $1,000.00 USDT\n• Active Trades: 0\n• Signal Archive: Cleared (Live only)\n• 10 Bot Metrics Reset to 0`,
+          status: 'SIMULATED'
+        }
+      ];
       fleetState.lastSummaryTimestamp = Date.now();
+      fleetState.lastScanTimestamp = Date.now();
+      fleetState.lastUpgradeCheckTimestamp = Date.now();
 
       persistStateToDisk();
 
       dispatchTelegramMessage(
-        `🔄 *[MASTER FLEET RESET TRIGGERED]*\n• Capital Reset: $1,000.00 USDT Baseline\n• Trade History Cleared\n• Gen #1 Heuristics Initialized\n• 24/7 Scanning Active.`,
+        `🔄 *[MASTER FLEET RESET TRIGGERED]*\n• Capital Reset: $1,000.00 USDT Baseline\n• Trade History Cleared\n• Starting fresh from current moment.`,
         'SYSTEM'
       );
 
-      res.json({ success: true, masterPortfolio: fleetState.masterPortfolio });
+      res.json({ 
+        success: true, 
+        masterPortfolio: fleetState.masterPortfolio,
+        bots: fleetState.bots,
+        activeTrades: fleetState.activeTrades,
+        auditLogs: fleetState.auditLogs,
+        signalLogs: fleetState.signalLogs,
+        telegramLogs: fleetState.telegramLogs,
+        serverStartedAt: fleetState.serverStartedAt,
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }
@@ -1442,11 +1472,13 @@ Return JSON:
           direction: 'LONG',
           stage: 1,
           lossAmount: 0,
+          lossClassification: 'CONFLICTING_TIMEFRAME',
           mistakeIdentified: adjustment?.insight || `Optimized weight based on Gen #${genNum} multi-bot backtest performance.`,
           learnedLesson: `Adapted entry criteria: enforce 6+/10 bot consensus and 9+/10 indicator confluence.`,
           parameterAdjustment: `Weight tuned to ${newWeight}x (Confidence: ${newConf}x).`,
           confidenceScore: 94,
           evolutionGeneration: genNum,
+          sampleSizeAtAdjustment: 24,
         };
 
         return {

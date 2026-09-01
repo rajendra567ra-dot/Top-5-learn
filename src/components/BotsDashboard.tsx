@@ -75,15 +75,20 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
             t => t.initiatorBotId === bot.id || t.confirmingBotIds.includes(bot.id)
           );
 
-          const totalClosed = bot.winTrades + bot.lossTrades;
-          const winRate = totalClosed > 0 ? (bot.winTrades / totalClosed) * 100 : 0;
-          const assistedPnL = bot.assistedPnL || bot.totalPnL || 0;
+          const winCount = bot.winTradesAssisted !== undefined ? bot.winTradesAssisted : (bot as any).winTrades || 0;
+          const lossCount = bot.lossTradesAssisted !== undefined ? bot.lossTradesAssisted : (bot as any).lossTrades || 0;
+          const totalClosed = winCount + lossCount;
+          const winRate = totalClosed > 0 ? (winCount / totalClosed) * 100 : (bot.winRate || 0);
+          const assistedPnL = bot.totalPnLAssisted !== undefined ? bot.totalPnLAssisted : ((bot as any).assistedPnL || (bot as any).totalPnL || 0);
+          const signalsGen = bot.totalSignalsGenerated !== undefined ? bot.totalSignalsGenerated : ((bot as any).signalsGenerated || 0);
+          const confirmsGiven = bot.totalConfirmationsGiven !== undefined ? bot.totalConfirmationsGiven : ((bot as any).confirmationsContributed || 0);
+          const avgR = bot.averageR !== undefined ? bot.averageR : 0.0;
 
           return (
             <div
               key={bot.id}
               id={`bot-card-${bot.id}`}
-              className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-slate-300 transition-all relative overflow-hidden"
+              className={`p-5 sm:p-6 rounded-2xl bg-white border ${bot.id === 'bot-10-gatekeeper' ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-200'} shadow-xs hover:border-slate-300 transition-all relative overflow-hidden`}
             >
               {/* Header Row */}
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
@@ -109,6 +114,16 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                       <span className="text-xs font-semibold text-slate-500">
                         ({bot.strategyTitle})
                       </span>
+                      {bot.isCoreBot && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          CORE BOT (3/4 Req)
+                        </span>
+                      )}
+                      {bot.id === 'bot-10-gatekeeper' && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                          GATEKEEPER (VETO POWER)
+                        </span>
+                      )}
                     </div>
 
                     <div className="mt-1 flex items-center gap-2 flex-wrap">
@@ -116,7 +131,10 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                         {bot.strategyBadge}
                       </span>
                       <span className="text-[11px] font-mono text-slate-500">
-                        TF: {bot.timeframe} • Consensus Weight: {((bot.strategyWeight || 0.2) * 100).toFixed(0)}%
+                        TF: {bot.timeframe} • Weight: {((bot.strategyWeight || 0.1) * 100).toFixed(1)}% (Cap: {((bot.minWeightCap || 0.05)*100).toFixed(0)}%-{((bot.maxWeightCap || 0.20)*100).toFixed(0)}%)
+                      </span>
+                      <span className="text-[11px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        Avg R: +{avgR.toFixed(2)}R
                       </span>
                     </div>
 
@@ -166,14 +184,14 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                   <div className="flex items-center justify-between text-[11px] text-slate-500">
                     <span className="uppercase font-bold">Consensus Activity</span>
-                    <span className="font-mono text-blue-600 font-bold">Weight {((bot.strategyWeight || 0.2) * 100).toFixed(0)}%</span>
+                    <span className="font-mono text-blue-600 font-bold">Weight {((bot.strategyWeight || 0.1) * 100).toFixed(1)}%</span>
                   </div>
                   <div className="mt-1.5 flex items-baseline justify-between">
                     <span className="text-xl font-bold text-slate-900 font-mono">
-                      {bot.signalsGenerated || 0} <span className="text-xs font-normal text-slate-500">Signals</span>
+                      {signalsGen} <span className="text-xs font-normal text-slate-500">Signals</span>
                     </span>
                     <span className="text-xs font-mono font-semibold text-slate-600">
-                      {bot.confirmationsContributed || 0} Confirms
+                      {confirmsGiven} Confirms
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-500 mt-1 font-mono">
@@ -192,9 +210,9 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                       {totalClosed} <span className="text-xs font-normal text-slate-500">Trades</span>
                     </span>
                     <div className="text-xs font-bold font-mono flex items-center gap-1.5">
-                      <span className="text-emerald-600">{bot.winTrades}W</span>
+                      <span className="text-emerald-600">{winCount}W</span>
                       <span className="text-slate-400">/</span>
-                      <span className="text-rose-600">{bot.lossTrades}L</span>
+                      <span className="text-rose-600">{lossCount}L</span>
                     </div>
                   </div>
                   <div className="text-[10px] text-slate-500 mt-1">
@@ -218,7 +236,7 @@ export const BotsDashboard: React.FC<BotsDashboardProps> = ({
                   </div>
                   <div className="text-[10px] text-slate-500 mt-2 font-mono flex justify-between">
                     <span>Rate: <strong className="text-slate-800">{winRate.toFixed(1)}%</strong></span>
-                    <span>No Trade Limit Active</span>
+                    <span className="text-indigo-600 font-bold">Avg R: +{avgR.toFixed(2)}</span>
                   </div>
                 </div>
 

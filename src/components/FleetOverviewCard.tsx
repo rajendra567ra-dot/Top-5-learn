@@ -86,7 +86,7 @@ export const FleetOverviewCard: React.FC<FleetOverviewCardProps> = ({
                 </span>
                 <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
                   <BrainCircuit className="w-3 h-3 text-purple-600" />
-                  Self-Evolving Heuristics (Gen #{masterPortfolio.evolutionGeneration || 4})
+                  Self-Evolving Heuristics (Gen #{masterPortfolio.evolutionGeneration || 1})
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">

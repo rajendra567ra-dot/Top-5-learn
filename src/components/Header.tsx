@@ -218,6 +218,20 @@ export const Header: React.FC<HeaderProps> = ({
             }`}>500</span>
           </button>
 
+          {/* Tab: Signal Archive & Gatekeeper Logs */}
+          <button
+            id="tab-signals-btn"
+            onClick={() => setActiveTab('signals')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 border cursor-pointer ${
+              activeTab === 'signals'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <History className={`w-3.5 h-3.5 ${activeTab === 'signals' ? 'text-blue-400' : 'text-slate-400'}`} />
+            <span>Signal Archive &amp; Rejections</span>
+          </button>
+
           {/* Tab: AI Brain & Self-Learning */}
           <button
             id="tab-brain-btn"

@@ -5,35 +5,208 @@ export type MarketTrend = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 export type Recommendation = 'STRONG_LONG' | 'LONG' | 'NEUTRAL' | 'SHORT' | 'STRONG_SHORT';
 export type ConsensusStage = 1 | 2 | 3 | 4 | 5;
 
-export type ConfirmationStrategyMode = 
-  | 'MULTI_CONFLUENCE'       // Multi-Indicator Confluence Matrix (Trend + Momentum + Volatility + Volume + AI Sentiment)
-  | 'TREND_PULLBACK'         // Macro 200 EMA + 21 EMA Dynamic Pullback
-  | 'LIQUIDITY_REVERSAL'     // Institutional Liquidity Sweep & Bollinger 2.5σ Reversal
-  | 'VOLATILITY_SQUEEZE'     // Keltner / Bollinger Band Compression & Explosive Expansion
-  | 'NEURAL_NARRATIVE';      // AI Sentiment Velocity & Narrative Acceleration
+// The 6 Standard Market Regimes
+export type MarketRegimeType = 
+  | 'TRENDING'
+  | 'RANGING'
+  | 'HIGH_VOLATILITY'
+  | 'LOW_VOLATILITY'
+  | 'BREAKOUT'
+  | 'REVERSAL';
 
-export interface TechnicalIndicatorConfluence {
-  name: string;
-  category: 'TREND' | 'MOMENTUM' | 'VOLATILITY' | 'VOLUME' | 'SENTIMENT' | 'LTF_EXECUTION';
-  value: string;
-  signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
-  confirmed: boolean;
-  weight: number;
-  description: string;
+// Standard 11 Loss Classification Taxonomy
+export type LossReasonClassification =
+  | 'FALSE_BREAKOUT'
+  | 'TREND_REVERSAL'
+  | 'POOR_ENTRY'
+  | 'LOW_VOLUME'
+  | 'LIQUIDITY_SWEEP_FAILURE'
+  | 'BAD_MARKET_REGIME'
+  | 'OVEREXTENDED_ENTRY'
+  | 'SUPPORT_RESISTANCE_FAILURE'
+  | 'STOP_TOO_TIGHT'
+  | 'CONFLICTING_TIMEFRAME'
+  | 'UNEXPECTED_VOLATILITY';
+
+// Multi-Timeframe Analysis Pipeline
+export interface MultiTimeframeAnalysis {
+  tf4h: {
+    regime: MarketRegimeType;
+    primaryDirection: TradeDirection | 'NEUTRAL';
+    ema200: number;
+    ema50: number;
+    closePrice: number;
+    adx: number;
+    structure: 'BULLISH' | 'BEARISH' | 'RANGING';
+    alignmentScore: number; // 0 - 100
+  };
+  tf1h: {
+    trendConfirmation: TradeDirection | 'NEUTRAL';
+    ema50: number;
+    ema200: number;
+    rsi: number;
+    structure: 'BULLISH' | 'BEARISH' | 'CHOP';
+    confirmed: boolean;
+  };
+  tf30m: {
+    setupFormation: string; // e.g. "Bullish BOS + Retest", "30M Pullback to 21 EMA"
+    bosType: 'BULLISH_BOS' | 'BEARISH_BOS' | 'NONE';
+    hasRetest: boolean;
+    setupFormed: boolean;
+  };
+  tf15m: {
+    tradeConfirmation: boolean;
+    structureShift: 'CHOCH_BULL' | 'CHOCH_BEAR' | 'CONTINUATION' | 'NONE';
+    rejectionCandle: boolean;
+    confirmationScore: number; // 0 - 100
+  };
+  tf5m: {
+    preciseEntry: boolean;
+    triggerCandle: string; // e.g. "5M Bullish Engulfing", "5M BOS + FVG tap"
+    slippageEstPercent: number;
+    optimalEntryPrice: number;
+    validStopLocation: number;
+    entryValid: boolean;
+  };
+  hierarchyHonored: boolean; // True if HTF trend is strictly obeyed
+  htfConflictReason?: string;
 }
 
-export interface TradeConfirmationMatrix {
-  strategyMode: ConfirmationStrategyMode;
-  strategyName: string;
-  confluenceScore: number; // 0 - 100%
-  minConfluenceRequired: number;
-  confirmedCount: number;
-  totalEvaluated: number;
-  indicators: TechnicalIndicatorConfluence[];
-  marketRegime: 'TRENDING_UP' | 'TRENDING_DOWN' | 'HIGH_VOLATILITY_RANGING' | 'COMPRESSION_SQUEEZE' | 'LIQUIDITY_HUNT';
-  primaryTrigger: string;
+// Bot Specific Decision Output
+export interface BotEvaluationDecision {
+  botId: string;
+  botName: string;
+  botNumber: string;
+  vote: 'LONG' | 'SHORT' | 'NEUTRAL';
+  confidence: number; // 0 - 100
+  weight: number; // 0.05 to 0.20 (max 20% cap)
+  effectiveContribution: number; // confidence * weight
+  primaryReason: string;
+  keyMetrics: Record<string, string | number>;
+  patternIdentified?: string;
+  historicalPatternWinRate?: number;
+  sampleSize?: number;
+  isCoreBot: boolean; // Bot 1, Bot 2, Bot 6, Bot 9 are Core
+  passedCoreCriteria: boolean;
 }
 
+// Gatekeeper Bot 10 Detailed Assessment
+export interface GatekeeperAssessment {
+  passed: boolean;
+  score: number; // 0 - 100
+  rrRatio: number; // Must be >= 2.0
+  stopLossValid: boolean;
+  atrVolatilityOk: boolean;
+  liquidityOk: boolean;
+  spreadOk: boolean;
+  nearbySRClearance: boolean;
+  noHTFConflict: boolean;
+  notOverextended: boolean;
+  regimeFavorable: boolean;
+  correlationRiskLow: boolean;
+  recentDrawdownChecked: boolean;
+  rejectionReasons: string[];
+}
+
+// Full Consensus Engine Output for a Candidate Setup
+export interface ConsensusEngineOutput {
+  symbol: string;
+  direction: TradeDirection | 'NEUTRAL';
+  rawConsensusCount: number; // e.g. 8/10
+  agreeingBots: string[];
+  disagreeingBots: string[];
+  neutralBots: string[];
+  coreAgreeCount: number; // e.g. 3/4 or 4/4 (needs >= 3)
+  coreAgreementPassed: boolean;
+  
+  // Score Breakdown (0 - 100)
+  rawConsensusScore: number;
+  historicalBotAdjustment: number;
+  marketRegimeAdjustment: number;
+  coinPerformanceAdjustment: number;
+  timeframeAlignmentAdjustment: number;
+  setupSimilarityAdjustment: number;
+  recentDrawdownAdjustment: number;
+  volatilityLiquidityAdjustment: number;
+  finalQualityScore: number; // 0 - 100 (needs >= 80)
+  
+  // Risk & Gatekeeper
+  gatekeeper: GatekeeperAssessment;
+  calculatedRR: number;
+  
+  // Final Decision
+  action: 'EXECUTE_TRADE' | 'REJECT_NO_TRADE';
+  primaryExecutionReason?: string;
+  primaryRejectionReason?: string;
+  rejectionTags: string[];
+  multiTimeframe: MultiTimeframeAnalysis;
+  botEvaluations: BotEvaluationDecision[];
+}
+
+// Signal Log for Every Opportunity Evaluated (Executed + Rejected)
+export interface SignalLogEntry {
+  id: string;
+  timestamp: number;
+  symbol: string;
+  timeframe: string;
+  marketRegime: MarketRegimeType;
+  direction: TradeDirection | 'NEUTRAL';
+  botVotes: Record<string, 'LONG' | 'SHORT' | 'NEUTRAL'>;
+  botConfidences: Record<string, number>;
+  consensusCount: number; // e.g. 8
+  rawQualityScore: number;
+  finalQualityScore: number;
+  entryPrice: number;
+  stopLossPrice: number;
+  takeProfitPrice: number;
+  calculatedRR: number;
+  volume24h: number;
+  volatility: number;
+  status: 'EXECUTED' | 'REJECTED' | 'EXPIRED';
+  tradeId?: string;
+  rejectionReason?: string;
+  rejectionCategory?: string;
+  gatekeeperVerdict: 'PASS' | 'REJECT';
+  executionReason?: string;
+  
+  // Outcome tracking (if executed or simulated)
+  outcomeResult?: 'WIN' | 'LOSS' | 'BREAKEVEN' | 'MISSED_WIN' | 'AVOIDED_LOSS';
+  maxFavorableExcursionR?: number; // MFE in R
+  maxAdverseExcursionR?: number;   // MAE in R
+  finalRealizedPnL?: number;
+  finalRealizedR?: number;
+  mistakeAttributions?: {
+    wrongBotIds: string[];
+    correctBotIds: string[];
+    lossClassification?: LossReasonClassification;
+  };
+}
+
+// Bot Pattern Statistical Tracking
+export interface BotPatternStat {
+  patternName: string;
+  timeframe: string;
+  sampleSize: number;
+  wins: number;
+  losses: number;
+  winRate: number; // percentage
+  averageR: number;
+  reliabilityConfidence: 'HIGH' | 'MODERATE' | 'LOW_SAMPLE_UNTRUSTED';
+}
+
+// Bot Regime Statistical Performance
+export interface BotRegimePerformance {
+  regime: MarketRegimeType;
+  totalSignals: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  profitFactor: number;
+  averageR: number;
+  recommendedWeightMultiplier: number; // e.g. 0.6x during Range for Breakout bot
+}
+
+// Learning Note for Bot Post-Mortems
 export interface BotLearningNote {
   id: string;
   timestamp: number;
@@ -42,18 +215,23 @@ export interface BotLearningNote {
   direction: TradeDirection;
   stage: number;
   lossAmount: number;
+  lossClassification: LossReasonClassification;
   mistakeIdentified: string;
   learnedLesson: string;
   parameterAdjustment: string;
   confidenceScore: number;
   evolutionGeneration?: number;
+  sampleSizeAtAdjustment: number;
 }
 
+// 10 Independent Trading Bots Specification
 export interface TradingBot {
   id: string;
-  number: string; // "01", "02", etc.
+  number: string; // "01" through "10"
   name: string;
   code: string;
+  role: string;
+  isCoreBot: boolean; // Bot 1, 2, 6, 9 are CORE bots
   strategyTitle: string;
   strategyBadge: string;
   strategyDescription: string;
@@ -61,19 +239,33 @@ export interface TradingBot {
   timeframe: string;
   indicators: string[];
   status: BotStatus;
-  minLeverage: number;
-  maxLeverage: number;
+  
+  // Weights (Strictly 5% to 20% max cap)
+  strategyWeight: number; // 0.05 to 0.20
+  minWeightCap: number; // 0.05 (5%)
+  maxWeightCap: number; // 0.20 (20% MAX CAP)
+  adaptiveConfidenceModifier: number; // 0.70 to 1.40
+  
+  // Performance Trackers
   totalSignalsGenerated: number;
   totalConfirmationsGiven: number;
   winTradesAssisted: number;
   lossTradesAssisted: number;
+  falseSignalsCount: number;
+  averageR: number;
+  winRate: number;
   totalPnLAssisted: number;
   activeSignalsCount: number;
   mistakesCount: number;
+  
+  // Detailed Pattern & Regime Intelligence
+  patternStats: BotPatternStat[];
+  regimePerformance: Record<MarketRegimeType, BotRegimePerformance>;
   learningNotes: BotLearningNote[];
-  adaptiveConfidenceModifier: number; // dynamically evolves as learning system improves
-  strategyWeight: number; // evolved by self-learning engine (0.5 to 2.0)
   accentColor: string;
+  
+  // Unique bot diagnostic insights
+  uniqueInsights?: string[];
 }
 
 export interface StageUpgradeRecord {
@@ -98,48 +290,49 @@ export interface TradePosition {
   id: string;
   symbol: string;
   name: string;
-  direction: TradeDirection; // LONG or SHORT
-  stage: ConsensusStage; // 1, 2, 3, 4, 5
+  direction: TradeDirection;
+  stage: ConsensusStage;
   initiatorBotId: string;
   initiatorBotName: string;
-  confirmingBotIds: string[]; // List of bot IDs that agreed & confirmed this trade
+  confirmingBotIds: string[];
   confirmingBotNames: string[];
-  leverage: number; // Dynamic leverage based on stage & conviction (e.g. 5x - 25x)
-  margin: number; // Initial total margin from master $1000 portfolio
-  remainingMargin: number; // Active margin remaining (after partial TPs)
-  positionSize: number; // margin * leverage
+  dissentingBotIds?: string[];
+  leverage: number;
+  margin: number;
+  remainingMargin: number;
+  positionSize: number;
   entryPrice: number;
   currentPrice: number;
-  initialStopLossPrice: number; // Original hard SL price
-  stopLossPrice: number; // Current active SL (Breakeven at TP1, TP1 price at TP2, TP2 at TP3, trailing structure)
-  liquidationPrice: number; // Exact calculated liquidation threshold (strictly far beyond SL)
+  initialStopLossPrice: number;
+  stopLossPrice: number;
+  liquidationPrice: number;
   slMode: 'INITIAL' | 'BREAKEVEN' | 'LOCKED_TP1' | 'LOCKED_TP2' | 'TRAILING_STRUCTURE';
 
   // Multi-tier TP Targets
   tp1Price: number;
   tp1Hit: boolean;
   tp1HitTime?: number;
-  tp1BookedPnL?: number; // 35% booked
+  tp1BookedPnL?: number;
 
   tp2Price: number;
   tp2Hit: boolean;
   tp2HitTime?: number;
-  tp2BookedPnL?: number; // 25% booked
+  tp2BookedPnL?: number;
 
   tp3Price: number;
   tp3Hit: boolean;
   tp3HitTime?: number;
-  tp3BookedPnL?: number; // 20% booked
+  tp3BookedPnL?: number;
 
-  runnerPercent: number; // 20%
+  runnerPercent: number;
   runnerActive: boolean;
   runnerBookedPnL?: number;
   trailingStopPrice?: number;
   structuralSupportPrice?: number;
   structuralResistancePrice?: number;
-  totalBookedPnL: number; // Sum of partial booked profits
+  totalBookedPnL: number;
 
-  takeProfitPrice: number; // Full target/TP3 price for legacy compatibility
+  takeProfitPrice: number;
   targetProfitUsd: number;
   maxLossUsd: number;
   unrealizedPnL: number;
@@ -151,17 +344,56 @@ export interface TradePosition {
   closePrice?: number;
   realizedPnL?: number;
   realizedPnLPercent?: number;
+  realizedR?: number;
+  maxFavorableExcursionR?: number;
+  maxAdverseExcursionR?: number;
+  
+  // Learning & Post Mortem
   aiReasoning: string;
   teacherExplanation?: TeacherExplanation;
   sentimentScore: number;
   confirmationMatrix?: TradeConfirmationMatrix;
+  consensusEngineOutput?: ConsensusEngineOutput;
   mistakeAnalysis?: string;
+  lossClassification?: LossReasonClassification;
+  wrongBotIds?: string[];
+  correctBotIds?: string[];
   exitReason?: string;
   stageAtClose?: ConsensusStage;
+  
   contractAddress?: string;
   network?: string;
   cmcUrl?: string;
   isVerified?: boolean;
+}
+
+export type ConfirmationStrategyMode = 
+  | 'MULTI_CONFLUENCE'
+  | 'TREND_PULLBACK'
+  | 'LIQUIDITY_REVERSAL'
+  | 'VOLATILITY_SQUEEZE'
+  | 'NEURAL_NARRATIVE';
+
+export interface TechnicalIndicatorConfluence {
+  name: string;
+  category: 'TREND' | 'MOMENTUM' | 'VOLATILITY' | 'VOLUME' | 'SENTIMENT' | 'LTF_EXECUTION';
+  value: string;
+  signal: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  confirmed: boolean;
+  weight: number;
+  description: string;
+}
+
+export interface TradeConfirmationMatrix {
+  strategyMode: ConfirmationStrategyMode;
+  strategyName: string;
+  confluenceScore: number;
+  minConfluenceRequired: number;
+  confirmedCount: number;
+  totalEvaluated: number;
+  indicators: TechnicalIndicatorConfluence[];
+  marketRegime: MarketRegimeType;
+  primaryTrigger: string;
 }
 
 export interface CryptoCoin {
@@ -178,18 +410,33 @@ export interface CryptoCoin {
   rsi: number;
   macd: 'BULLISH_CROSS' | 'BEARISH_CROSS' | 'NEUTRAL';
   trend: MarketTrend;
-  sentimentScore: number; // -100 to 100
-  volatility: number; // percentage
-  matchingBots: string[]; // Bot IDs that have high signal on this coin
+  sentimentScore: number;
+  volatility: number;
+  matchingBots: string[];
   consensusDirection?: TradeDirection;
-  confirmingBotsCount?: number; // 1 to 5
+  confirmingBotsCount?: number;
   recommendation: Recommendation;
   category: 'Layer 1' | 'DeFi' | 'AI / DePIN' | 'Meme' | 'Layer 2' | 'Infrastructure' | 'Gaming';
   confirmationMatrix?: TradeConfirmationMatrix;
+  multiTimeframe?: MultiTimeframeAnalysis;
   contractAddress?: string;
   network?: string;
   cmcUrl?: string;
   isVerified?: boolean;
+}
+
+export interface CoinSpecificLearning {
+  symbol: string;
+  sampleSize: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  avgR: number;
+  bestPerformingBotId: string;
+  weakestBotId: string;
+  preferredRegime: MarketRegimeType;
+  weightAdjustment: number; // e.g. +0.05 or -0.05
+  statisticallySignificant: boolean; // true if sample >= 20
 }
 
 export interface StagePerformanceStats {
@@ -212,17 +459,47 @@ export interface SelfLearningHeuristic {
   id: string;
   key: string;
   name: string;
-  category: 'CONSENSUS_FILTER' | 'VOLATILITY_CLAMP' | 'LEVERAGE_DYNAMIC' | 'SENTIMENT_WEIGHT' | 'STOP_LOSS_SPACING';
+  category: 'CONSENSUS_FILTER' | 'VOLATILITY_CLAMP' | 'LEVERAGE_DYNAMIC' | 'SENTIMENT_WEIGHT' | 'STOP_LOSS_SPACING' | 'TIME_FRAME_HIERARCHY' | 'PATTERN_RELIABILITY';
   currentValue: string;
   previousValue: string;
   adaptationType: 'TIGHTENED' | 'EXPANDED' | 'OPTIMIZED' | 'HARDENED';
   rationale: string;
-  effectivenessScore: number; // 0 - 100%
+  effectivenessScore: number;
+  sampleSizeAtCreation: number;
   timestamp: number;
 }
 
+// Anti-Overfitting & Walk-Forward Validation Model
+export interface WalkForwardValidation {
+  trainingWindowTrades: number; // e.g. 150 trades
+  validationWindowTrades: number; // e.g. 50 trades
+  outOfSampleTrades: number; // e.g. 50 trades
+  trainingWinRate: number;
+  validationWinRate: number;
+  outOfSampleWinRate: number;
+  trainingSharpe: number;
+  outOfSampleSharpe: number;
+  overfitWarning: boolean; // true if out-of-sample degrades > 15%
+  status: 'ROBUST_STABLE' | 'MODERATE_DRIFT' | 'OVERFITTING_DETECTED';
+  lastEvaluatedTimestamp: number;
+}
+
+// "When Not to Trade" Analytics Model
+export interface SelectivityMetrics {
+  totalScannedCandidates: number;
+  rejectedSetupsCount: number;
+  rejectionRatePercent: number; // e.g. 84.5% rejected
+  acceptedSetupsCount: number;
+  avoidedEstimatedLossUsd: number;
+  expectedRPerTrade: number; // e.g. +1.42 R
+  avgRWin: number;
+  avgRLoss: number;
+  falseSignalsFiltered: number;
+  gatekeeperOverrideCount: number;
+}
+
 export interface MasterPortfolio {
-  initialBase: number; // $1,000.00
+  initialBase: number;
   currentBalance: number;
   totalRealizedPnL: number;
   netROI: number;
@@ -232,6 +509,7 @@ export interface MasterPortfolio {
   totalWins: number;
   totalLosses: number;
   fleetWinRate: number;
+  averageFleetR: number;
   evolutionGeneration: number;
   selfLearningAdaptationsCount: number;
   activeStagedTradesCount?: number;

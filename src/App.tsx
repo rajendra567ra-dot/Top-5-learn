@@ -9,11 +9,12 @@ import {
   BotLearningNote,
   ConsensusStage,
   MasterPortfolio,
-  ConfirmationStrategyMode
+  ConfirmationStrategyMode,
+  SignalLogEntry
 } from './types';
 import { generateTop500Universe } from './data/topCoins';
 import { INITIAL_BOTS } from './data/initialBots';
-import { INITIAL_ACTIVE_TRADES, INITIAL_AUDIT_LOGS } from './data/initialTrades';
+import { INITIAL_ACTIVE_TRADES, INITIAL_AUDIT_LOGS, INITIAL_SIGNAL_LOGS } from './data/initialTrades';
 import { 
   formatTelegramFleetSummary 
 } from './services/tradingEngine';
@@ -25,6 +26,7 @@ import { BotsDashboard } from './components/BotsDashboard';
 import { ActiveTradesView } from './components/ActiveTradesView';
 import { StrategyMatrixSelector } from './components/StrategyMatrixSelector';
 import { MarketScannerView } from './components/MarketScannerView';
+import { SignalArchiveView } from './components/SignalArchiveView';
 import { MistakeLearningView } from './components/MistakeLearningView';
 import { AuditLogsView } from './components/AuditLogsView';
 import { TelegramHubView } from './components/TelegramHubView';
@@ -60,6 +62,7 @@ const INITIAL_MASTER_PORTFOLIO: MasterPortfolio = {
   totalLosses: 0,
   totalTradesExecuted: 0,
   fleetWinRate: 0.0,
+  averageFleetR: 0.0,
   evolutionGeneration: 1,
   selfLearningAdaptationsCount: 0,
   activeStagedTradesCount: 0,
@@ -71,6 +74,7 @@ export const App: React.FC = () => {
   const [masterPortfolio, setMasterPortfolio] = useState<MasterPortfolio>(INITIAL_MASTER_PORTFOLIO);
   const [activeTrades, setActiveTrades] = useState<TradePosition[]>(INITIAL_ACTIVE_TRADES);
   const [auditLogs, setAuditLogs] = useState<TradePosition[]>(INITIAL_AUDIT_LOGS);
+  const [signalLogs, setSignalLogs] = useState<SignalLogEntry[]>(INITIAL_SIGNAL_LOGS);
   const [coins, setCoins] = useState<CryptoCoin[]>(() => generateTop500Universe());
   
   const [marketStats, setMarketStats] = useState<MarketStats | null>({
@@ -134,6 +138,7 @@ export const App: React.FC = () => {
         if (Array.isArray(data.bots) && data.bots.length > 0) setBots(data.bots);
         if (Array.isArray(data.activeTrades)) setActiveTrades(deduplicateById(data.activeTrades));
         if (Array.isArray(data.auditLogs)) setAuditLogs(deduplicateById(data.auditLogs));
+        if (Array.isArray(data.signalLogs)) setSignalLogs(data.signalLogs);
         if (data.telegramConfig) setTelegramConfig(data.telegramConfig);
         if (Array.isArray(data.telegramLogs)) setTelegramLogs(data.telegramLogs);
         if (typeof data.uptimeSeconds === 'number') setUptimeSeconds(data.uptimeSeconds);
@@ -379,11 +384,13 @@ export const App: React.FC = () => {
           direction: 'LONG',
           stage: 3,
           lossAmount: 18.00,
+          lossClassification: 'CONFLICTING_TIMEFRAME',
           mistakeIdentified: data.mistakeIdentified,
           learnedLesson: data.learnedLesson,
           parameterAdjustment: data.parameterAdjustment,
           confidenceScore: 95,
           evolutionGeneration: masterPortfolio.evolutionGeneration + 1,
+          sampleSizeAtAdjustment: 24,
         };
 
         setBots(bList => bList.map(b => b.id === bot.id ? {
@@ -579,6 +586,13 @@ export const App: React.FC = () => {
             onTradeCoinWithBot={handleTradeCoinFromScanner}
             onRunLiveFleetScan={handleRunLiveFleetScan}
             isScanning={isScanning}
+          />
+        )}
+
+        {/* Tab 3.5: Signal History & Gatekeeper Rejection Archive */}
+        {activeTab === 'signals' && (
+          <SignalArchiveView
+            signalLogs={signalLogs}
           />
         )}
 

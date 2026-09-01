@@ -1,1 +1,47 @@
-{}
+{
+  "serverStartedAt": 1788280000000,
+  "accumulatedUptimeSeconds": 0,
+  "is247Running": true,
+  "activeStrategyMode": "MULTI_CONFLUENCE",
+  "masterPortfolio": {
+    "initialBase": 1000,
+    "currentBalance": 1000,
+    "totalRealizedPnL": 0,
+    "netROI": 0,
+    "totalWins": 0,
+    "totalLosses": 0,
+    "totalTradesExecuted": 0,
+    "fleetWinRate": 0,
+    "averageFleetR": 0,
+    "evolutionGeneration": 1,
+    "selfLearningAdaptationsCount": 0,
+    "activeStagedTradesCount": 0
+  },
+  "bots": [],
+  "activeTrades": [],
+  "auditLogs": [],
+  "signalLogs": [],
+  "telegramConfig": {
+    "botToken": "",
+    "chatId": "",
+    "enabled": false,
+    "summaryIntervalMinutes": 60,
+    "notifyOnTradeOpen": true,
+    "notifyOnTakeProfit": true,
+    "notifyOnStopLoss": true,
+    "notifyHourlySummary": true
+  },
+  "telegramLogs": [
+    {
+      "id": "tg-init-clean-start",
+      "timestamp": 1788280000000,
+      "type": "SYSTEM",
+      "target": "@CryptoFleetBot",
+      "message": "⚡ *[24/7 AUTONOMOUS 10-BOT ENGINE STARTED CLEAN]*\n• Baseline Capital: $1,000.00 USDT\n• Active Trades: 0\n• Signal Archive: Initialized (Live entries from now)\n• 10 Bot Heuristics Active",
+      "status": "SIMULATED"
+    }
+  ],
+  "lastSummaryTimestamp": 1788280000000,
+  "lastScanTimestamp": 1788280000000,
+  "lastUpgradeCheckTimestamp": 1788280000000
+}

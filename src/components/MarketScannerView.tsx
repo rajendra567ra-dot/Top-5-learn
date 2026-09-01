@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { CryptoCoin, TradingBot, ConsensusStage } from '../types';
 import { STAGE_CONFIGS } from '../services/tradingEngine';
+import { MultiTimeframeInspectorModal } from './MultiTimeframeInspectorModal';
 
 interface MarketStats {
   totalMarketCap: number;
@@ -52,6 +53,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
   const [sortBy, setSortBy] = useState<'rank' | 'change' | 'volume' | 'rsi' | 'sentiment' | 'consensus'>('rank');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
+  const [inspectCoin, setInspectCoin] = useState<CryptoCoin | null>(null);
   const itemsPerPage = 25;
 
   const categories = ['ALL', 'Layer 1', 'DeFi', 'AI / DePIN', 'Meme', 'Layer 2', 'Infrastructure', 'Gaming'];
@@ -422,6 +424,16 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5 font-sans">
                           <button
+                            id={`inspect-action-${coin.symbol}`}
+                            onClick={() => setInspectCoin(coin)}
+                            className="px-2 py-1 text-[11px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all flex items-center gap-1 cursor-pointer"
+                            title="Inspect 4H→5M Multi-Timeframe Alignment"
+                          >
+                            <Layers className="w-3 h-3 text-slate-500" />
+                            <span>4H→5M Audit</span>
+                          </button>
+
+                          <button
                             id={`trade-action-${coin.symbol}`}
                             onClick={() => {
                               const botId = coin.matchingBots && coin.matchingBots[0] ? coin.matchingBots[0] : 'bot-1';
@@ -467,6 +479,20 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 4H→5M Multi-Timeframe and 10-Bot Inspector Modal */}
+      {inspectCoin && (
+        <MultiTimeframeInspectorModal
+          coin={inspectCoin}
+          direction={inspectCoin.change24h >= 0 ? 'LONG' : 'SHORT'}
+          bots={bots}
+          onClose={() => setInspectCoin(null)}
+          onExecuteTrade={(c, d) => {
+            const botId = c.matchingBots && c.matchingBots[0] ? c.matchingBots[0] : 'bot-1';
+            onTradeCoinWithBot(c, botId);
+          }}
+        />
+      )}
 
     </div>
   );
