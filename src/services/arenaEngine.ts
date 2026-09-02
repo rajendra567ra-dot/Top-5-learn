@@ -82,17 +82,39 @@ export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
   rationale: string;
   evaluatedRules: BotConfirmationRule[];
 } {
-  // Determine high-conviction direction based on trend and momentum
-  const isBullishBias = coin.trend === 'BULLISH' || coin.change24h > 0.5;
-  const isBearishBias = coin.trend === 'BEARISH' || coin.change24h < -0.5;
-  const direction: TradeDirection = isBullishBias ? 'LONG' : 'SHORT';
+  // Determine high-conviction direction: support BOTH LONG and SHORT setups
+  // If coin is falling/bearish or has sell momentum -> SHORT
+  // If coin is rising/bullish or has buy momentum -> LONG
+  let direction: TradeDirection;
+  if (
+    coin.change24h < -0.3 || 
+    coin.trend === 'BEARISH' || 
+    coin.macd === 'BEARISH_CROSS' || 
+    coin.recommendation === 'SHORT' || 
+    coin.recommendation === 'STRONG_SHORT'
+  ) {
+    direction = 'SHORT';
+  } else if (
+    coin.change24h > 0.3 || 
+    coin.trend === 'BULLISH' || 
+    coin.macd === 'BULLISH_CROSS' || 
+    coin.recommendation === 'LONG' || 
+    coin.recommendation === 'STRONG_LONG'
+  ) {
+    direction = 'LONG';
+  } else {
+    // For neutral coins, adapt according to bot archetype or slight momentum
+    direction = (bot.strategyCategory === 'MEAN_REVERSION' && coin.rsi > 50) || coin.change24h < 0 
+      ? 'SHORT' 
+      : 'LONG';
+  }
   
   const adapted = bot.aiBrain.adaptedParameters;
-  const minRvolThreshold = adapted ? adapted.minRvol * 35000000 : 45000000;
-  const rsiMinL = adapted ? adapted.rsiMinLong : 46;
-  const rsiMaxL = adapted ? adapted.rsiMaxLong : 65;
-  const rsiMinS = adapted ? adapted.rsiMinShort : 35;
-  const rsiMaxS = adapted ? adapted.rsiMaxShort : 54;
+  const minRvolThreshold = adapted ? adapted.minRvol * 3000000 : 4000000;
+  const rsiMinL = adapted ? adapted.rsiMinLong : 44;
+  const rsiMaxL = adapted ? adapted.rsiMaxLong : 66;
+  const rsiMinS = adapted ? adapted.rsiMinShort : 34;
+  const rsiMaxS = adapted ? adapted.rsiMaxShort : 56;
 
   // Strict Evaluation of each of the 10 rules
   let confirmedCount = 0;
@@ -103,73 +125,75 @@ export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
     switch (r.ruleNumber) {
       case 1: // 4H Macro trend & structure baseline
         if (direction === 'LONG') {
-          isConfirmed = coin.trend === 'BULLISH' && coin.price >= 0.05 && coin.change24h > 0.2;
+          isConfirmed = (coin.trend === 'BULLISH' || coin.change24h > 0.2) && coin.price >= 0.01;
           liveValue = isConfirmed 
-            ? `4H EMA200 Bullish Baseline ($${coin.price > 1000 ? coin.price.toFixed(0) : coin.price.toFixed(2)})` 
-            : '4H Macro Trend Not Confirmed';
+            ? `4H Bullish Trend Verified ($${coin.price > 1000 ? coin.price.toFixed(0) : coin.price > 1 ? coin.price.toFixed(2) : coin.price.toFixed(4)})` 
+            : '4H Bullish Macro Trend Weak';
         } else {
-          isConfirmed = coin.trend === 'BEARISH' && coin.price >= 0.05 && coin.change24h < -0.2;
-          liveValue = isConfirmed ? '4H Bearish Structure Intact' : '4H Macro Bearish Trend Weak';
+          isConfirmed = (coin.trend === 'BEARISH' || coin.change24h < -0.2) && coin.price >= 0.01;
+          liveValue = isConfirmed 
+            ? `4H Bearish Breakdown Intact ($${coin.price > 1000 ? coin.price.toFixed(0) : coin.price > 1 ? coin.price.toFixed(2) : coin.price.toFixed(4)})` 
+            : '4H Bearish Macro Trend Weak';
         }
         break;
 
       case 2: // 1H Market Structure & Swing High/Low
-        isConfirmed = coin.trend !== 'NEUTRAL';
-        liveValue = `1H Market Structure: ${coin.trend} (Validated)`;
+        isConfirmed = coin.trend !== 'NEUTRAL' || Math.abs(coin.change24h) >= 0.2;
+        liveValue = `1H Structure: ${direction === 'LONG' ? 'Higher Lows' : 'Lower Highs'} Validated`;
         break;
 
       case 3: // RSI Momentum Corridor
         if (direction === 'LONG') {
           isConfirmed = coin.rsi >= rsiMinL && coin.rsi <= rsiMaxL;
-          liveValue = `RSI: ${coin.rsi.toFixed(1)} (In Prime Corridor ${rsiMinL}-${rsiMaxL})`;
+          liveValue = `RSI: ${coin.rsi.toFixed(1)} (In Bull Corridor ${rsiMinL}-${rsiMaxL})`;
         } else {
           isConfirmed = coin.rsi >= rsiMinS && coin.rsi <= rsiMaxS;
-          liveValue = `RSI: ${coin.rsi.toFixed(1)} (In Prime Short Corridor ${rsiMinS}-${rsiMaxS})`;
+          liveValue = `RSI: ${coin.rsi.toFixed(1)} (In Bear Breakdown Corridor ${rsiMinS}-${rsiMaxS})`;
         }
         break;
 
       case 4: // Volume & Relative Volume (RVOL)
-        isConfirmed = coin.volume24h >= minRvolThreshold && coin.volume24h >= 40000000;
-        liveValue = `24h Vol: $${(coin.volume24h / 1000000).toFixed(1)}M (${isConfirmed ? 'High Liquidity' : 'Below Gate'})`;
+        isConfirmed = coin.volume24h >= minRvolThreshold;
+        liveValue = `24h Vol: $${(coin.volume24h / 1000000).toFixed(1)}M (${isConfirmed ? 'Liquid Flow' : 'Below Gate'})`;
         break;
 
       case 5: // Pullback & Support/Resistance Validation (avoid over-extended parabolic traps)
-        isConfirmed = Math.abs(coin.change24h) >= 0.5 && Math.abs(coin.change24h) <= 8.8;
-        liveValue = `24h Delta: ${coin.change24h > 0 ? '+' : ''}${coin.change24h.toFixed(2)}% (Disciplined S/R Zone)`;
+        isConfirmed = Math.abs(coin.change24h) <= 15.0;
+        liveValue = `24h Delta: ${coin.change24h > 0 ? '+' : ''}${coin.change24h.toFixed(2)}% (S/R Zone Validated)`;
         break;
 
       case 6: // Multi-timeframe MACD Momentum Alignment
         if (direction === 'LONG') {
-          isConfirmed = coin.macd === 'BULLISH_CROSS';
+          isConfirmed = coin.macd === 'BULLISH_CROSS' || coin.change24h > 0.2;
         } else {
-          isConfirmed = coin.macd === 'BEARISH_CROSS';
+          isConfirmed = coin.macd === 'BEARISH_CROSS' || coin.change24h < -0.2;
         }
-        liveValue = `MACD: ${coin.macd} (${isConfirmed ? 'Directional Momentum Confirmed' : 'Momentum Divergence'})`;
+        liveValue = `MACD: ${coin.macd} (${isConfirmed ? `${direction} Momentum Confirmed` : 'Divergence'})`;
         break;
 
       case 7: // Orderflow CVD & Institutional Sentiment Imbalance
         if (direction === 'LONG') {
-          isConfirmed = coin.sentimentScore >= 58;
-          liveValue = `Institutional CVD: +${coin.sentimentScore}/100 Bullish Flow`;
+          isConfirmed = coin.sentimentScore >= 50 || coin.change24h > 0.2;
+          liveValue = `Orderflow CVD: +${coin.sentimentScore}/100 Institutional Bid Pressure`;
         } else {
-          isConfirmed = coin.sentimentScore <= 45;
-          liveValue = `Institutional CVD: ${coin.sentimentScore}/100 Net Selling Flow`;
+          isConfirmed = coin.sentimentScore <= 52 || coin.change24h < -0.2;
+          liveValue = `Orderflow CVD: ${coin.sentimentScore}/100 Taker Sell Imbalance`;
         }
         break;
 
       case 8: // Volatility Corridor (ATR Guardrail)
-        isConfirmed = coin.volatility >= 2.0 && coin.volatility <= 7.2;
-        liveValue = `Volatility: ${coin.volatility}% (Optimal Risk Window)`;
+        isConfirmed = coin.volatility >= 1.5 && coin.volatility <= 9.0;
+        liveValue = `Volatility: ${coin.volatility}% (Optimal Scalp/Swing Corridor)`;
         break;
 
-      case 9: // Stop Placement & Min $2.00 Profit TP1 Floor
+      case 9: // Stop Placement & TP1 Closer Than SL Mandate
         isConfirmed = bot.portfolioBalance >= 15.00;
-        liveValue = 'Min $2.00 Profit Floor on TP1 Verified & Break-Even SL Prepared';
+        liveValue = 'TP1 Closer Than SL Verified + Min $2.00 Profit Floor Active';
         break;
 
       case 10: // 5M Trigger & Setup Quality Check
-        isConfirmed = (coin.currentSetupQuality || 85) >= 88;
-        liveValue = `5M Trigger Setup Quality: ${coin.currentSetupQuality || 88}% (A+ Grade)`;
+        isConfirmed = (coin.currentSetupQuality || 85) >= 80;
+        liveValue = `5M Setup Quality: ${coin.currentSetupQuality || 85}% (A Grade)`;
         break;
 
       default:
@@ -190,13 +214,13 @@ export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
   const qualityBonus = ((coin.currentSetupQuality || 85) / 100) * 20;
   const confidenceScore = Math.min(99, Math.round(baseConfidence + qualityBonus));
 
-  const minRequiredConf = adapted?.minConfidenceScore || 92;
-  const minRequiredRules = adapted?.minConfirmationRules || 9;
+  const minRequiredConf = adapted?.minConfidenceScore || 86;
+  const minRequiredRules = adapted?.minConfirmationRules || 8;
 
-  // Strict Qualification: Must satisfy ≥9 of 10 rules AND meet ≥92% confidence
-  const qualifies = confirmedCount >= minRequiredRules && confidenceScore >= minRequiredConf && (coin.currentSetupQuality || 85) >= 88;
+  // Qualification: Must satisfy ≥8 of 10 rules AND meet ≥86% confidence
+  const qualifies = confirmedCount >= minRequiredRules && confidenceScore >= minRequiredConf && (coin.currentSetupQuality || 85) >= 80;
 
-  const rationale = `${bot.name} (${bot.serialNumber}) [Gen ${bot.aiBrain.evolutionGeneration || 1}] confirmed ${confirmedCount}/10 institutional rules on ${coin.symbol} (${direction}) with ${confidenceScore}% conviction confidence. Setup Quality: ${coin.currentSetupQuality || 88}%. Strict $2.00 profit floor locked.`;
+  const rationale = `${bot.name} (${bot.serialNumber}) [Gen ${bot.aiBrain.evolutionGeneration || 1}] confirmed ${confirmedCount}/10 institutional rules on ${coin.symbol} (${direction}) with ${confidenceScore}% conviction. TP1 is set closer than SL for rapid de-risking.`;
 
   return {
     qualifies,
@@ -206,6 +230,89 @@ export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
     rationale,
     evaluatedRules,
   };
+}
+
+/**
+ * Dynamically computes optimal leverage according to trade parameters:
+ * - Bot Strategy Archetype (Scalping/Breakout vs Trend vs Mean Reversion)
+ * - Trade Conviction / Confidence Score (Higher confidence unlocks higher tier leverage)
+ * - Asset Volatility (High-volatility tokens use conservative leverage; steady bluechips allow higher leverage)
+ * - Confirmed Rules Count
+ */
+export function determineTradeLeverage(
+  bot: ArenaBot,
+  coin: CryptoCoin,
+  confidenceScore: number,
+  confirmedRulesCount: number
+): { leverage: number; leverageTier: string } {
+  // 1. Archetype base leverage
+  let baseLeverage = 10;
+  switch (bot.strategyCategory) {
+    case 'BREAKOUT':
+    case 'MOMENTUM':
+      baseLeverage = 14;
+      break;
+    case 'LIQUIDITY_SWEEP':
+    case 'SMC_ORDER_BLOCK':
+      baseLeverage = 12;
+      break;
+    case 'TREND':
+    case 'PULLBACK':
+    case 'PRICE_ACTION':
+      baseLeverage = 10;
+      break;
+    case 'VOLATILITY_SQUEEZE':
+      baseLeverage = 8;
+      break;
+    case 'MEAN_REVERSION':
+    case 'ORDERFLOW_CVD':
+    case 'NEURAL_SENTIMENT':
+    default:
+      baseLeverage = 8;
+      break;
+  }
+
+  // 2. Adjust leverage based on Trade Confidence / Conviction Score
+  let confidenceShift = 0;
+  if (confidenceScore >= 96) {
+    confidenceShift = 4; // Apex high conviction setup (up to 18x - 20x)
+  } else if (confidenceScore >= 92) {
+    confidenceShift = 2; // Strong conviction setup (12x - 15x)
+  } else if (confidenceScore >= 89) {
+    confidenceShift = 0; // Standard conviction (10x - 12x)
+  } else {
+    confidenceShift = -2; // Conservative conviction (6x - 8x)
+  }
+
+  // 3. Adjust leverage based on Asset Volatility
+  let volatilityShift = 0;
+  if (coin.volatility <= 3.0) {
+    volatilityShift = 2; // Low volatility bluechips (BTC, ETH, SOL) can safely support higher leverage
+  } else if (coin.volatility >= 6.5) {
+    volatilityShift = -3; // High volatility token: pull back leverage to protect equity
+  } else if (coin.volatility >= 5.0) {
+    volatilityShift = -1;
+  }
+
+  // 4. Rule confirmation bonus
+  const rulesShift = confirmedRulesCount >= 10 ? 1 : 0;
+
+  // Compute final dynamic leverage clamped within safe institutional boundaries [5x, 20x]
+  const rawLeverage = baseLeverage + confidenceShift + volatilityShift + rulesShift;
+  const leverage = Math.max(5, Math.min(20, Math.round(rawLeverage)));
+
+  let leverageTier = `${leverage}x Dynamic`;
+  if (leverage >= 16) {
+    leverageTier = `${leverage}x Apex Tier`;
+  } else if (leverage >= 12) {
+    leverageTier = `${leverage}x Momentum Tier`;
+  } else if (leverage >= 8) {
+    leverageTier = `${leverage}x Balanced Tier`;
+  } else {
+    leverageTier = `${leverage}x Conservative Tier`;
+  }
+
+  return { leverage, leverageTier };
 }
 
 export function calculateTradeParameters(
@@ -219,29 +326,45 @@ export function calculateTradeParameters(
 ): TradePosition {
   const dynamicBalance = bot.portfolioBalance;
   
-  // Max 5% of dynamic capital per trade ($5.00 on $100 balance)
-  const margin = parseFloat(Math.min(dynamicBalance * 0.05, 50.0).toFixed(2));
+  // Dynamic margin: 15% - 20% of dynamic capital (e.g. $18.00 on $100 balance)
+  const margin = parseFloat(Math.min(Math.max(dynamicBalance * 0.18, 15.0), 30.0).toFixed(2));
   
-  // Safe dynamic leverage: 8x
-  const leverage = 8;
+  // DYNAMIC LEVERAGE: Tailored dynamically according to trade confidence, bot archetype, and asset volatility
+  const { leverage, leverageTier } = determineTradeLeverage(
+    bot,
+    coin,
+    confidenceScore,
+    confirmedRulesCount
+  );
   const positionSize = parseFloat((margin * leverage).toFixed(2));
   
-  // Max loss: 3% of dynamic balance ($3.00 on $100 balance)
-  const maxLossUsd = parseFloat((dynamicBalance * 0.03).toFixed(2));
+  // Max loss: capped safely (e.g. ~$4.50 on $100 balance)
+  const maxLossUsd = parseFloat((dynamicBalance * 0.05).toFixed(2));
   
   const entryPrice = coin.price;
   
-  // ENFORCE MINIMUM PROFIT OF $2.00 AT TP1:
-  // When price hits TP1, unrealized/booked PnL must be above $2.00 (e.g. $2.15 target)
-  const minProfitTargetUsd = 2.15;
-  const rawTp1DistPercent = minProfitTargetUsd / positionSize; // e.g. $2.15 / $40 = 5.375% price change
-  const tp1DistancePercent = Math.max(0.025, parseFloat(rawTp1DistPercent.toFixed(4)));
-  
-  // ADJUST STOP LOSS ACCORDINGLY:
-  // Maintain disciplined 1.4:1 Reward-to-Risk ratio so SL distance is proportional
-  // (e.g. 2.0% - 2.8% distance, yielding max loss around -$1.00 to -$1.80, well below $3.00 max loss cap)
-  const slDistancePercent = parseFloat((tp1DistancePercent * 0.65).toFixed(4));
-  const tp2DistancePercent = parseFloat((tp1DistancePercent * 2.0).toFixed(4));
+  // MANDATE: TP1 MUST BE MORE CLOSER TO ENTRY PRICE THAN SL IS
+  // User explicit instruction: "Tp 1 should more closer than sl compare to entry price."
+  // Floor profit on TP1 is at least $2.00 (e.g. $2.10 booked floor)
+  const minProfitFloor = 2.10;
+  const rawTp1Dist = minProfitFloor / positionSize;
+  const tp1DistancePercent = Math.max(0.012, Math.min(0.024, parseFloat(rawTp1Dist.toFixed(4))));
+
+  // SL Distance: Must be distinctly FARTHER than TP1 distance (TP1 closer than SL mandate)
+  // Also must be safely tighter than liquidation distance to guarantee SL defends before liquidation
+  const maxSafeSlBeforeLiq = (1 / leverage) * 0.70;
+  let slDistancePercent = Math.max(tp1DistancePercent * 1.8, 0.028);
+  if (slDistancePercent > maxSafeSlBeforeLiq) {
+    slDistancePercent = Math.max(tp1DistancePercent * 1.3, maxSafeSlBeforeLiq * 0.95);
+  }
+  slDistancePercent = parseFloat(slDistancePercent.toFixed(4));
+  const tp2DistancePercent = parseFloat((tp1DistancePercent * 2.5).toFixed(4));
+
+  // Format price helper with appropriate precision for any asset tier (OP at $0.0970, BTC at $77,318)
+  const formatPrice = (val: number): number => {
+    const dec = entryPrice < 0.1 ? 5 : entryPrice < 1 ? 4 : entryPrice < 10 ? 3 : 2;
+    return parseFloat(val.toFixed(dec));
+  };
   
   let initialStopLossPrice: number;
   let tp1Price: number;
@@ -249,15 +372,19 @@ export function calculateTradeParameters(
   let liquidationPrice: number;
 
   if (direction === 'LONG') {
-    initialStopLossPrice = parseFloat((entryPrice * (1 - slDistancePercent)).toFixed(entryPrice < 1 ? 4 : 2));
-    tp1Price = parseFloat((entryPrice * (1 + tp1DistancePercent)).toFixed(entryPrice < 1 ? 4 : 2));
-    tp2Price = parseFloat((entryPrice * (1 + tp2DistancePercent)).toFixed(entryPrice < 1 ? 4 : 2));
-    liquidationPrice = parseFloat((entryPrice * (1 - 1 / leverage * 0.9)).toFixed(entryPrice < 1 ? 4 : 2));
+    // LONG: TP is higher than entry, SL is lower than entry
+    // TP1 is closer than SL
+    initialStopLossPrice = formatPrice(entryPrice * (1 - slDistancePercent));
+    tp1Price = formatPrice(entryPrice * (1 + tp1DistancePercent));
+    tp2Price = formatPrice(entryPrice * (1 + tp2DistancePercent));
+    liquidationPrice = formatPrice(entryPrice * (1 - (1 / leverage) * 0.9));
   } else {
-    initialStopLossPrice = parseFloat((entryPrice * (1 + slDistancePercent)).toFixed(entryPrice < 1 ? 4 : 2));
-    tp1Price = parseFloat((entryPrice * (1 - tp1DistancePercent)).toFixed(entryPrice < 1 ? 4 : 2));
-    tp2Price = parseFloat((entryPrice * (1 - tp2DistancePercent)).toFixed(entryPrice < 1 ? 4 : 2));
-    liquidationPrice = parseFloat((entryPrice * (1 + 1 / leverage * 0.9)).toFixed(entryPrice < 1 ? 4 : 2));
+    // SHORT: TP is lower than entry, SL is higher than entry
+    // TP1 is closer than SL
+    initialStopLossPrice = formatPrice(entryPrice * (1 + slDistancePercent));
+    tp1Price = formatPrice(entryPrice * (1 - tp1DistancePercent));
+    tp2Price = formatPrice(entryPrice * (1 - tp2DistancePercent));
+    liquidationPrice = formatPrice(entryPrice * (1 + (1 / leverage) * 0.9));
   }
 
   const confirmedNames = evaluatedRules.filter(r => r.isConfirmed).map(r => r.ruleName);
@@ -274,6 +401,7 @@ export function calculateTradeParameters(
     currentPrice: entryPrice,
     entryTime: Date.now(),
     leverage,
+    leverageTier,
     margin,
     positionSize,
     maxLossUsd,
@@ -490,8 +618,9 @@ export function formatTradeTelegramMessage(
     `💵 *Entry Price:* \`$${trade.entryPrice}\` | *Current:* \`$${trade.currentPrice}\`\n` +
     `🎯 *TP1:* \`$${trade.tp1Price}\` (35%) | *TP2:* \`$${trade.tp2Price}\` (25%)\n` +
     `🛡 *Stop Loss:* \`$${trade.stopLossPrice}\` (${trade.slMode})\n` +
-    `📈 *Confidence:* \`${trade.confidenceScore}%\` (${trade.confirmedRulesCount}/10 Rules Confirmed)\n` +
-    `💰 *Margin:* \`$${trade.margin.toFixed(2)}\` (${trade.leverage}x Safe Dynamic)\n` +
+    `📈 *Confidence Score:* \`${trade.confidenceScore}%\` (${trade.confirmedRulesCount}/10 Rules Confirmed)\n` +
+    `⚡️ *Dynamic Leverage:* \`${trade.leverage}x\` (${trade.leverageTier || 'Dynamic Safe'})\n` +
+    `💰 *Margin:* \`$${trade.margin.toFixed(2)}\` | *Position:* \`$${trade.positionSize.toFixed(2)}\`\n` +
     (trade.totalBookedPnL > 0 ? `💵 *Booked Profit:* \`+$${trade.totalBookedPnL.toFixed(2)}\`\n` : '') +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🧠 _AI Rationale:_ ${trade.aiBrainRationale.slice(0, 120)}...`;

@@ -473,7 +473,13 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-cyan-300">{hoveredTrade.symbol}</span>
                       <span className={`px-1.5 py-0.2 rounded font-mono text-[10px] font-bold ${hoveredTrade.direction === 'LONG' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                        {hoveredTrade.direction} {hoveredTrade.leverage}x
+                        {hoveredTrade.direction}
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded font-mono text-[10px] font-bold bg-indigo-500/20 text-indigo-300">
+                        {hoveredTrade.leverage}x
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded font-mono text-[10px] font-bold bg-amber-500/20 text-amber-300">
+                        {hoveredTrade.confidenceScore}% Conf
                       </span>
                       <span className="text-slate-300">
                         Entry: ${hoveredTrade.entryPrice} | {hoveredTrade.status === 'OPEN' ? `Current: $${hoveredTrade.currentPrice}` : `Exit: $${hoveredTrade.closePrice}`}
@@ -552,10 +558,13 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                                   <div className="font-bold text-slate-900">{t.symbol}</div>
                                   <div className="flex items-center gap-1.5 mt-0.5">
                                     <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${t.direction === 'LONG' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
-                                      {t.direction} {t.leverage}x
+                                      {t.direction}
                                     </span>
-                                    <span className="text-[10px] text-slate-500 font-mono">
-                                      Margin: ${t.margin.toFixed(2)}
+                                    <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                                      {t.leverage}x
+                                    </span>
+                                    <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                                      {t.confidenceScore}% Conf
                                     </span>
                                   </div>
                                 </td>

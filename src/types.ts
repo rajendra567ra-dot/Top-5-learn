@@ -129,7 +129,8 @@ export interface TradePosition {
   entryPrice: number;
   currentPrice: number;
   entryTime: number;
-  leverage: number; // 3x to 15x dynamic safe
+  leverage: number; // Dynamic 5x to 20x according to trade factors
+  leverageTier?: string; // e.g. "16x Apex Tier" | "12x Momentum Tier" | "8x Conservative Tier"
   margin: number; // Max 5% of dynamic balance ($5.00 on $100)
   positionSize: number; // margin * leverage
   maxLossUsd: number; // Max 3% of dynamic balance ($3.00 on $100)
@@ -192,6 +193,7 @@ export interface CryptoCoin {
   rsi: number;
   macd: 'BULLISH_CROSS' | 'BEARISH_CROSS' | 'NEUTRAL';
   trend: MarketTrend;
+  recommendation?: Recommendation;
   sentimentScore: number;
   volatility: number;
   category: string;
