@@ -2,297 +2,304 @@ import React, { useState } from 'react';
 import { 
   Send, 
   Settings, 
+  ShieldCheck, 
   CheckCircle2, 
   AlertCircle, 
+  Play, 
   Clock, 
-  Copy, 
-  Check, 
-  ExternalLink, 
-  ShieldCheck, 
-  Radio, 
-  Sparkles,
-  Zap,
-  Trash2
+  Award, 
+  FileText,
+  DollarSign,
+  Sparkles
 } from 'lucide-react';
-import { TelegramConfig, TelegramLog } from '../types';
+import { ArenaFleetState, TelegramConfig } from '../types';
 
 interface TelegramHubViewProps {
-  telegramConfig: TelegramConfig;
-  telegramLogs: TelegramLog[];
-  onOpenSetupModal: () => void;
-  onSendTestMessage: () => Promise<void>;
-  onSendFleetSummaryNow: () => Promise<void>;
-  onClearLogs: () => void;
+  state: ArenaFleetState;
   onUpdateConfig: (config: Partial<TelegramConfig>) => void;
-  isSending: boolean;
+  onSendTest: () => void;
+  onTriggerHourly: () => void;
 }
 
 export const TelegramHubView: React.FC<TelegramHubViewProps> = ({
-  telegramConfig,
-  telegramLogs,
-  onOpenSetupModal,
-  onSendTestMessage,
-  onSendFleetSummaryNow,
-  onClearLogs,
+  state,
   onUpdateConfig,
-  isSending,
+  onSendTest,
+  onTriggerHourly,
 }) => {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const { telegramConfig, telegramLogs } = state;
+  const [botToken, setBotToken] = useState(telegramConfig.botToken || '');
+  const [chatId, setChatId] = useState(telegramConfig.chatId || '');
+  const [enabled, setEnabled] = useState(telegramConfig.enabled || false);
 
-  const handleCopy = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const [notifyOnTradeOpen, setNotifyOnTradeOpen] = useState(telegramConfig.notifyOnTradeOpen ?? true);
+  const [notifyOnTP1, setNotifyOnTP1] = useState(telegramConfig.notifyOnTP1 ?? true);
+  const [notifyOnTP2, setNotifyOnTP2] = useState(telegramConfig.notifyOnTP2 ?? true);
+  const [notifyOnStopLoss, setNotifyOnStopLoss] = useState(telegramConfig.notifyOnStopLoss ?? true);
+  const [notifyHourlySummary, setNotifyHourlySummary] = useState(telegramConfig.notifyHourlySummary ?? true);
+
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateConfig({
+      botToken,
+      chatId,
+      enabled,
+      notifyOnTradeOpen,
+      notifyOnTP1,
+      notifyOnTP2,
+      notifyOnStopLoss,
+      notifyHourlySummary,
+    });
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
   };
 
-  const isConfigured = Boolean(telegramConfig.botToken && telegramConfig.chatId);
+  // Top 10 Performing Bots for preview
+  const top10Bots = [...state.bots]
+    .sort((a, b) => b.portfolioBalance - a.portfolioBalance)
+    .slice(0, 10);
 
   return (
-    <div id="telegram-hub-view" className="space-y-6">
+    <div id="telegram-hub-view" className="space-y-6 text-slate-900">
+      
       {/* Top Banner */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm relative overflow-hidden">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-              <Send className="w-6 h-6" />
+      <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-100 border border-cyan-200 flex items-center justify-center text-cyan-700">
+              <Send className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-                  TELEGRAM REAL-TIME DISPATCH HUB
-                </h2>
-                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
-                  isConfigured && !telegramConfig.lastError
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                    : isConfigured && telegramConfig.lastError
-                    ? 'bg-rose-50 text-rose-700 border-rose-200'
-                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                }`}>
-                  {isConfigured && !telegramConfig.lastError
-                    ? 'LIVE WEBHOOK CONNECTED' 
-                    : isConfigured && telegramConfig.lastError
-                    ? 'TOKEN AUTH ERROR'
-                    : 'SIMULATION MODE (NO TOKEN)'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
-                Sends automated real-time trade signals (Entries, TP hit &gt;$2, SL hit + AI brain learning post-mortems) and hourly performance digests directly to your private Telegram channel/chat.
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                Telegram 1-Hour Top 10 Intelligence Dispatcher
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                Automatically formats and broadcasts Top 10 bot rankings, 24/7 server uptime, and active positions every 60 minutes.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="flex items-center gap-2">
             <button
-              id="test-telegram-btn"
-              onClick={onSendTestMessage}
-              disabled={isSending}
-              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <Radio className={`w-3.5 h-3.5 ${isSending ? 'animate-spin' : ''}`} />
-              <span>Test Connection</span>
-            </button>
-
-            <button
-              id="send-now-telegram-btn"
-              onClick={onSendFleetSummaryNow}
-              disabled={isSending}
-              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all flex items-center gap-1.5 disabled:opacity-50"
+              id="tg-send-test-btn"
+              onClick={onSendTest}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors flex items-center gap-1.5"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Send Hourly Report Now</span>
+              <span>Send Test Ping</span>
             </button>
 
             <button
-              id="config-telegram-btn"
-              onClick={onOpenSetupModal}
-              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all flex items-center gap-1.5"
+              id="tg-trigger-hourly-btn"
+              onClick={onTriggerHourly}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition-all shadow-2xs flex items-center gap-1.5"
             >
-              <Settings className="w-3.5 h-3.5 text-slate-600" />
-              <span>Configure Bot</span>
+              <Award className="w-3.5 h-3.5" />
+              <span>Dispatch Hourly Report Now</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Telegram Auth Warning Banner if token is invalid or unauthorized */}
-      {telegramConfig.lastError && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs flex items-center justify-between gap-3 text-rose-800">
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-            <div>
-              <strong className="font-semibold">Telegram Delivery Notice:</strong> {telegramConfig.lastError}. 
-              <span className="text-rose-600 ml-1">Please verify your Bot Token with @BotFather or use Simulated Mode.</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={onOpenSetupModal}
-              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-xs transition-all"
-            >
-              Update Credentials
-            </button>
-            <button
-              onClick={() => onUpdateConfig({ botToken: '', chatId: '', enabled: false })}
-              className="px-3 py-1.5 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 font-medium rounded-lg text-xs transition-all"
-            >
-              Switch to Simulation
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Alert Settings Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* Toggle 1: Trade Opened */}
-        <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between space-y-2">
+        {/* Telegram Configuration Form */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-slate-900">Trade Opened Alert</span>
-            <input
-              type="checkbox"
-              checked={telegramConfig.notifyOnTradeOpen}
-              onChange={(e) => onUpdateConfig({ notifyOnTradeOpen: e.target.checked })}
-              className="w-4 h-4 accent-blue-600 cursor-pointer"
-            />
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Fires instantly when any of the 5 bots opens a Long/Short with 5% dynamic margin.
-          </p>
-        </div>
-
-        {/* Toggle 2: Take Profit Hit */}
-        <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-emerald-700">Take-Profit Alerts (&gt;$2)</span>
-            <input
-              type="checkbox"
-              checked={telegramConfig.notifyOnTakeProfit}
-              onChange={(e) => onUpdateConfig({ notifyOnTakeProfit: e.target.checked })}
-              className="w-4 h-4 accent-emerald-600 cursor-pointer"
-            />
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Dispatches realized profit amount, ROI %, and new compounded bot balance.
-          </p>
-        </div>
-
-        {/* Toggle 3: Stop Loss Hit */}
-        <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-rose-700">Stop-Loss + AI Post-Mortem</span>
-            <input
-              type="checkbox"
-              checked={telegramConfig.notifyOnStopLoss}
-              onChange={(e) => onUpdateConfig({ notifyOnStopLoss: e.target.checked })}
-              className="w-4 h-4 accent-rose-600 cursor-pointer"
-            />
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Fires max 3% loss cap alert + full Brain AI root mistake & parameter adjustment.
-          </p>
-        </div>
-
-        {/* Toggle 4: Hourly Summary */}
-        <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-purple-700">Periodic Digest</span>
-            <select
-              value={telegramConfig.summaryIntervalMinutes}
-              onChange={(e) => onUpdateConfig({ summaryIntervalMinutes: Number(e.target.value) })}
-              className="bg-slate-50 text-slate-900 text-xs px-2 py-0.5 rounded border border-slate-200"
-            >
-              <option value="15">Every 15 Min</option>
-              <option value="30">Every 30 Min</option>
-              <option value="60">Every 60 Min</option>
-            </select>
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Automated fleet status report with 5-bot breakdown, combined ROI, and win rates.
-          </p>
-        </div>
-
-      </div>
-
-      {/* Terminal of Dispatched Messages */}
-      <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm">
-        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></div>
-            <h3 className="text-xs font-bold text-slate-900 uppercase">
-              TELEGRAM DISPATCH CONSOLE LOGS ({telegramLogs.length} MESSAGES)
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Settings className="w-4 h-4 text-emerald-600" />
+              Telegram Bot API Credentials
             </h3>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${enabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}`}>
+              {enabled ? 'Dispatches Enabled' : 'Simulated In-App Log Mode'}
+            </span>
           </div>
 
-          <button
-            onClick={onClearLogs}
-            className="text-[11px] text-slate-500 hover:text-rose-600 flex items-center gap-1 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Clear Logs</span>
-          </button>
-        </div>
-
-        <div className="p-4 space-y-4 max-h-[600px] overflow-y-auto font-sans">
-          {telegramLogs.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-400">
-              No Telegram messages sent yet. Trigger a test dispatch or wait for an automated trade execution.
+          <form onSubmit={handleSave} className="space-y-4 text-xs">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">
+                Telegram Bot Token:
+              </label>
+              <input
+                id="tg-bot-token-input"
+                type="password"
+                value={botToken}
+                onChange={(e) => setBotToken(e.target.value)}
+                placeholder="1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                From @BotFather on Telegram (Optional: logs show in audit stream if empty).
+              </p>
             </div>
-          ) : (
-            telegramLogs.map((log) => {
-              const isCopied = copiedId === log.id;
 
-              return (
-                <div
-                  key={log.id}
-                  id={`telegram-log-${log.id}`}
-                  className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2 relative group"
-                >
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 border-b border-slate-200 pb-2">
-                    <div className="flex items-center gap-2 font-mono">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        log.type === 'TRADE_OPEN' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                        log.type === 'TAKE_PROFIT' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                        log.type === 'STOP_LOSS' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
-                        'bg-purple-50 text-purple-700 border border-purple-200'
-                      }`}>
-                        {log.type}
-                      </span>
-                      <span>Target: {log.target}</span>
-                      <span className={`text-[10px] font-bold ${
-                        log.status === 'SENT' ? 'text-emerald-600' :
-                        log.status === 'FAILED' ? 'text-rose-600' :
-                        'text-amber-600'
-                      }`}>
-                        [{log.status}]
-                      </span>
-                      {log.errorDetails && (
-                        <span className="text-[10px] text-rose-500 italic truncate max-w-[200px]" title={log.errorDetails}>
-                          ({log.errorDetails})
-                        </span>
-                      )}
-                    </div>
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">
+                Telegram Chat / Group / Channel ID:
+              </label>
+              <input
+                id="tg-chat-id-input"
+                type="text"
+                value={chatId}
+                onChange={(e) => setChatId(e.target.value)}
+                placeholder="@my_channel_name or -100123456789"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+              />
+            </div>
 
-                    <div className="flex items-center gap-2 font-mono">
-                      <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
-                      <button
-                        onClick={() => handleCopy(log.id, log.message)}
-                        className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors"
-                        title="Copy message markdown"
-                      >
-                        {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
+            {/* Notification Event Toggles */}
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <span className="font-bold text-slate-700 block text-xs">
+                Broadcast Alert Triggers:
+              </span>
 
-                  <pre className="text-slate-800 whitespace-pre-wrap font-mono text-xs leading-relaxed overflow-x-auto p-3 bg-white rounded-lg border border-slate-200">
-                    {log.message}
-                  </pre>
-                </div>
-              );
-            })
-          )}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyHourlySummary}
+                  onChange={(e) => setNotifyHourlySummary(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-slate-700 font-medium">Hourly Top 10 Leaderboard & Uptime Dispatch</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyOnTradeOpen}
+                  onChange={(e) => setNotifyOnTradeOpen(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-slate-700 font-medium">Trade Open (≥9/10 Confirmation Rationale)</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyOnTP1}
+                  onChange={(e) => setNotifyOnTP1(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-slate-700 font-medium">TP1 Target Hit (Min $2.00 Booked + SL to BE)</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyOnTP2}
+                  onChange={(e) => setNotifyOnTP2(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-slate-700 font-medium">TP2 Target Hit & Trailing Runner Activation</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyOnStopLoss}
+                  onChange={(e) => setNotifyOnStopLoss(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-slate-700 font-medium">Stop Loss Defense & AI Mistake Learning Event</span>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={(e) => setEnabled(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-slate-800 font-bold">Enable Telegram Live Broadcasting</span>
+              </label>
+
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition-colors shadow-2xs"
+              >
+                {saveSuccess ? '✓ Saved Successfully' : 'Save Telegram Settings'}
+              </button>
+            </div>
+          </form>
         </div>
+
+        {/* Telegram Hourly Report Preview */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-cyan-600" />
+                Next 60-Minute Broadcast Preview
+              </h3>
+              <span className="text-[10px] font-mono text-cyan-700 font-bold bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
+                Hourly Auto-Trigger Active
+              </span>
+            </div>
+
+            {/* Telegram Message Mockup Container */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 font-mono text-[11px] text-slate-800 space-y-1.5 shadow-2xs overflow-y-auto max-h-72">
+              <div className="font-bold text-slate-900">📊 ═════════════════════════ 📊</div>
+              <div className="font-bold text-slate-900">⚡️ APEX 40 BOT ARENA — 1-HOUR RECAP ⚡️</div>
+              <div className="text-slate-500">🕒 {new Date().toUTCString()}</div>
+              <div className="font-bold text-slate-900">═══════════════════════════════</div>
+              <div>💰 Total Arena Capital: <strong>${state.totalArenaBalance.toFixed(2)}</strong> ({state.totalArenaPnL >= 0 ? '+' : ''}${state.totalArenaPnL.toFixed(2)})</div>
+              <div>🏆 Arena Win Rate: <strong>{state.arenaWinRate}%</strong> ({state.totalArenaWins}W / {state.totalArenaLosses}L)</div>
+              <div>⚡️ Active Running Trades: <strong>{state.activeTrades.length}</strong></div>
+              <div>🛡 Min Profit Floor: <strong>$2.00 on TP1</strong> (Risk Capped at 3%)</div>
+              <div className="pt-1 font-bold text-slate-900">🏅 TOP 10 RANKED BOT FLEET:</div>
+              {top10Bots.map((b, idx) => (
+                <div key={b.id} className="text-slate-700">
+                  {idx + 1}. <strong>{b.serialNumber} ({b.name})</strong> — ${b.portfolioBalance.toFixed(2)} | {b.winRate}% WR | Gen {b.aiBrain.evolutionGeneration || 1}
+                </div>
+              ))}
+              <div className="pt-1 text-slate-500">🤖 40 Bots Active • CMC 500 Market Scanner Engine</div>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-slate-500 mt-2 font-medium">
+            This message is formatted and pushed to your configured Telegram channel every hour automatically.
+          </p>
+        </div>
+
       </div>
+
+      {/* Broadcast Log Stream */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <Clock className="w-4 h-4 text-slate-600" />
+          Recent Telegram Dispatch Logs ({telegramLogs.length})
+        </h3>
+
+        {telegramLogs.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl">
+            No dispatches sent yet. Use the "Dispatch Hourly Report Now" button or "Send Test Ping" above.
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {telegramLogs.map((log) => (
+              <div key={log.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-start justify-between gap-3 shadow-2xs">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900">{log.title}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${log.status === 'SENT' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}`}>
+                      {log.status}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 mt-1 font-mono line-clamp-1">{log.message}</div>
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono shrink-0">
+                  {new Date(log.timestamp).toLocaleTimeString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 };

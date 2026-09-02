@@ -1,6 +1,6 @@
 {
-  "name": "NEXUS FIVE • Multi-Bot Consensus Crypto Fleet",
-  "description": "Autonomous multi-bot consensus trading engine executing stage-wise trades (Stages 1-5) across top 500 crypto assets with unified $1,000 master portfolio and self-evolving AI heuristics.",
+  "name": "Apex 40 AI Crypto Bot Arena",
+  "description": "Autonomous arena of 40 advanced AI crypto trading bots with dynamic $100 portfolios, 10-indicator multi-timeframe confirmation engines, human-like neural mistake learning, live CMC 500 scanner, and 24/7 automated Telegram reports.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
