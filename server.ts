@@ -24,7 +24,11 @@ import {
 } from './src/services/arenaEngine';
 
 const app = express();
-const PORT = 3000;
+// On AI Studio dev sandbox, port 3000 is required by the internal nginx reverse proxy.
+// On cloud deployment hosts (like AIC Cloud, Cloud Run, Render, etc.), process.env.PORT specifies the target port (e.g. 10004).
+const PORT = process.env.APPLET_ID 
+  ? 3000 
+  : (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
 app.use(express.json());
 
@@ -455,7 +459,12 @@ app.post('/api/arena/scan/toggle', (req, res) => {
 
 // Vite middleware & production setup
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  const isProduction = 
+    process.env.NODE_ENV === 'production' || 
+    Boolean(process.argv[1] && (process.argv[1].endsWith('.cjs') || process.argv[1].includes('dist'))) ||
+    (!process.env.APPLET_ID && fs.existsSync(path.join(process.cwd(), 'dist', 'index.html')));
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -470,7 +479,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Apex 40 AI Crypto Bot Arena Server running on port ${PORT}`);
+    console.log(`Apex 40 AI Crypto Bot Arena Server running on http://0.0.0.0:${PORT}`);
   });
 }
 
