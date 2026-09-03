@@ -29,7 +29,7 @@ export function adaptBotStrategyFromPast(
     minRvol: 1.5,
     minConfirmationRules: 9,
     minConfidenceScore: 90,
-    tp1ProfitTargetUsd: 2.10,
+    tp1ProfitTargetPercent: 35,
     slDistancePercent: 0.018,
     tp1DistancePercent: 0.035,
     tp2DistancePercent: 0.075,
@@ -187,8 +187,8 @@ export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
         break;
 
       case 9: // Stop Placement & TP1 Closer Than SL Mandate
-        isConfirmed = bot.portfolioBalance >= 15.00;
-        liveValue = 'TP1 Closer Than SL Verified + Min $2.00 Profit Floor Active';
+        isConfirmed = bot.portfolioBalance >= 1.00;
+        liveValue = 'TP1 Closer Than SL (35% TP1 → BE, 25% TP2 → Lock TP1, 40% Runner)';
         break;
 
       case 10: // 5M Trigger & Setup Quality Check
@@ -326,8 +326,8 @@ export function calculateTradeParameters(
 ): TradePosition {
   const dynamicBalance = bot.portfolioBalance;
   
-  // Dynamic margin: 15% - 20% of dynamic capital (e.g. $18.00 on $100 balance)
-  const margin = parseFloat(Math.min(Math.max(dynamicBalance * 0.18, 15.0), 30.0).toFixed(2));
+  // Use 3% of dynamic capital per trade
+  const margin = parseFloat(Math.max(0.50, dynamicBalance * 0.03).toFixed(2));
   
   // DYNAMIC LEVERAGE: Tailored dynamically according to trade confidence, bot archetype, and asset volatility
   const { leverage, leverageTier } = determineTradeLeverage(
@@ -338,27 +338,19 @@ export function calculateTradeParameters(
   );
   const positionSize = parseFloat((margin * leverage).toFixed(2));
   
-  // Max loss: capped safely (e.g. ~$4.50 on $100 balance)
-  const maxLossUsd = parseFloat((dynamicBalance * 0.05).toFixed(2));
+  // Max loss per trade: 1.5% of dynamic capital
+  const maxLossUsd = parseFloat((dynamicBalance * 0.015).toFixed(2));
   
   const entryPrice = coin.price;
   
-  // MANDATE: TP1 MUST BE MORE CLOSER TO ENTRY PRICE THAN SL IS
-  // User explicit instruction: "Tp 1 should more closer than sl compare to entry price."
-  // Floor profit on TP1 is at least $2.00 (e.g. $2.10 booked floor)
-  const minProfitFloor = 2.10;
-  const rawTp1Dist = minProfitFloor / positionSize;
-  const tp1DistancePercent = Math.max(0.012, Math.min(0.024, parseFloat(rawTp1Dist.toFixed(4))));
+  // Stop Loss Distance: Mathematically aligns so initial SL hit equals max loss (1.5% of dynamic capital)
+  // maxLossUsd / positionSize = (0.015 * balance) / (0.03 * balance * leverage) = 0.5 / leverage
+  const slDistancePercent = parseFloat((0.5 / leverage).toFixed(4));
 
-  // SL Distance: Must be distinctly FARTHER than TP1 distance (TP1 closer than SL mandate)
-  // Also must be safely tighter than liquidation distance to guarantee SL defends before liquidation
-  const maxSafeSlBeforeLiq = (1 / leverage) * 0.70;
-  let slDistancePercent = Math.max(tp1DistancePercent * 1.8, 0.028);
-  if (slDistancePercent > maxSafeSlBeforeLiq) {
-    slDistancePercent = Math.max(tp1DistancePercent * 1.3, maxSafeSlBeforeLiq * 0.95);
-  }
-  slDistancePercent = parseFloat(slDistancePercent.toFixed(4));
-  const tp2DistancePercent = parseFloat((tp1DistancePercent * 2.5).toFixed(4));
+  // MANDATE: TP1 MUST BE CLOSER TO ENTRY PRICE THAN SL IS
+  // Set TP1 to 50% of the SL distance (fast de-risking milestone)
+  const tp1DistancePercent = parseFloat((slDistancePercent * 0.50).toFixed(4));
+  const tp2DistancePercent = parseFloat((tp1DistancePercent * 2.20).toFixed(4));
 
   // Format price helper with appropriate precision for any asset tier (OP at $0.0970, BTC at $77,318)
   const formatPrice = (val: number): number => {
@@ -470,7 +462,7 @@ export function updateTradePriceAndTargets(
     return { updatedTrade: updated, eventFired, realizedPnLDelta };
   }
 
-  // 2. Check TP1 Hit (Enforce Min $2.00 profit booked, move SL to Entry / Break-Even)
+  // 2. Check TP1 Hit (Book 35% profit, move SL to Entry / Break-Even)
   const isTp1Triggered = !updated.tp1Hit && (
     updated.direction === 'LONG' ? newPrice >= updated.tp1Price : newPrice <= updated.tp1Price
   );
@@ -479,19 +471,18 @@ export function updateTradePriceAndTargets(
     updated.tp1Hit = true;
     updated.tp1HitTime = Date.now();
     
-    // Ensure TP1 booked amount is at least $2.00
-    const rawTp1Portion = updated.unrealizedPnL * 0.45;
-    const tp1Booked = Math.max(2.05, parseFloat(rawTp1Portion.toFixed(2)));
+    // Book 35% of the position profit
+    const tp1Booked = parseFloat((Math.max(0.01, updated.unrealizedPnL * 0.35)).toFixed(2));
     updated.tp1BookedAmount = tp1Booked;
     updated.totalBookedPnL = parseFloat((updated.totalBookedPnL + tp1Booked).toFixed(2));
     
-    // Move SL to Entry Price (Break-Even) immediately removing all downside risk!
+    // Move SL to Entry Price (Break-Even) immediately eliminating all downside risk!
     updated.stopLossPrice = updated.entryPrice;
     updated.slMode = 'BREAKEVEN_TP1';
     eventFired = 'TP1_HIT';
   }
 
-  // 3. Check TP2 Hit (Book secondary profit, move SL to TP1 Price)
+  // 3. Check TP2 Hit (Book 25% profit, move SL to TP1 Price)
   const isTp2Triggered = updated.tp1Hit && !updated.tp2Hit && (
     updated.direction === 'LONG' ? newPrice >= updated.tp2Price : newPrice <= updated.tp2Price
   );
@@ -499,28 +490,36 @@ export function updateTradePriceAndTargets(
   if (isTp2Triggered) {
     updated.tp2Hit = true;
     updated.tp2HitTime = Date.now();
-    const tp2Booked = parseFloat((Math.max(1.50, updated.unrealizedPnL * 0.30)).toFixed(2));
+    
+    // Book 25% of the position profit
+    const tp2Booked = parseFloat((Math.max(0.01, updated.unrealizedPnL * 0.25)).toFixed(2));
     updated.tp2BookedAmount = tp2Booked;
     updated.totalBookedPnL = parseFloat((updated.totalBookedPnL + tp2Booked).toFixed(2));
     
-    // Move SL to TP1 Price (Lock in major profit)
+    // Move SL to TP1 Price (Lock in profits at TP1 milestone!)
     updated.stopLossPrice = updated.tp1Price;
     updated.slMode = 'LOCKED_TP2';
     eventFired = 'TP2_HIT';
   }
 
-  // 4. Check Trailing Runner (40%)
+  // 4. Check Trailing Runner (Keep 40% runner & trailing SL according to structure)
   if (updated.tp2Hit && updated.runnerActive) {
-    const trailingBuffer = updated.direction === 'LONG'
-      ? newPrice * 0.985
-      : newPrice * 1.015;
+    const tp1Dist = Math.abs(updated.tp1Price - updated.entryPrice);
+    const trailBuffer = Math.max(tp1Dist * 0.75, newPrice * 0.012);
+    const precision = newPrice < 0.1 ? 5 : newPrice < 1 ? 4 : newPrice < 10 ? 3 : 2;
 
-    if (updated.direction === 'LONG' && trailingBuffer > updated.stopLossPrice) {
-      updated.stopLossPrice = parseFloat(trailingBuffer.toFixed(newPrice < 1 ? 4 : 2));
-      updated.slMode = 'TRAILING_RUNNER';
-    } else if (updated.direction === 'SHORT' && trailingBuffer < updated.stopLossPrice) {
-      updated.stopLossPrice = parseFloat(trailingBuffer.toFixed(newPrice < 1 ? 4 : 2));
-      updated.slMode = 'TRAILING_RUNNER';
+    if (updated.direction === 'LONG') {
+      const structureTrailing = parseFloat((newPrice - trailBuffer).toFixed(precision));
+      if (structureTrailing > updated.stopLossPrice) {
+        updated.stopLossPrice = structureTrailing;
+        updated.slMode = 'TRAILING_RUNNER';
+      }
+    } else {
+      const structureTrailing = parseFloat((newPrice + trailBuffer).toFixed(precision));
+      if (structureTrailing < updated.stopLossPrice) {
+        updated.stopLossPrice = structureTrailing;
+        updated.slMode = 'TRAILING_RUNNER';
+      }
     }
   }
 
@@ -563,7 +562,7 @@ export function analyzeTradeMistakeAndEvolve(trade: TradePosition, bot: ArenaBot
 
 export function formatHourlyTelegramSummary(state: ArenaFleetState): string {
   const now = Date.now();
-  const uptimeMs = now - state.serverBootTimestamp;
+  const uptimeMs = now - (state.serverBootTimestamp || now);
   const days = Math.floor(uptimeMs / (1000 * 60 * 60 * 24));
   const hours = Math.floor((uptimeMs / (1000 * 60 * 60)) % 24);
   const mins = Math.floor((uptimeMs / (1000 * 60)) % 60);
@@ -577,25 +576,26 @@ export function formatHourlyTelegramSummary(state: ArenaFleetState): string {
   top10.forEach((bot, index) => {
     const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`;
     const pnlSign = bot.totalPnL >= 0 ? '+' : '';
-    top10Text += `${medal} *${bot.serialNumber}* ${bot.name}\n` +
-      `   💰 Balance: *$${bot.portfolioBalance.toFixed(2)}* (${pnlSign}$${bot.totalPnL.toFixed(2)})\n` +
-      `   🎯 Win Rate: *${bot.winRate}%* (${bot.wins}W / ${bot.losses}L) | Trades: ${bot.totalTrades}\n\n`;
+    const safeName = bot.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    top10Text += `${medal} <b>[${bot.serialNumber}] ${safeName}</b>\n` +
+      `   💰 Balance: <b>$${bot.portfolioBalance.toFixed(2)}</b> (${pnlSign}$${bot.totalPnL.toFixed(2)})\n` +
+      `   🎯 Win Rate: <b>${bot.winRate}%</b> (${bot.wins}W / ${bot.losses}L) | Live: ${bot.activeTradesCount}\n\n`;
   });
 
   const arenaPnlSign = state.totalArenaPnL >= 0 ? '+' : '';
 
-  return `🤖 *APEX 40 AI CRYPTO BOT ARENA — HOURLY INTELLIGENCE REPORT*\n` +
+  return `🤖 <b>APEX 40 AI CRYPTO BOT ARENA — 1-HOUR PERFORMANCE REPORT</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `⏱ *24/7 Cloud Uptime:* \`${uptimeStr}\`\n` +
-    `🏦 *Total Arena Capital:* \`$${state.totalArenaBalance.toFixed(2)}\` (${arenaPnlSign}$${state.totalArenaPnL.toFixed(2)})\n` +
-    `📊 *Arena Win Rate:* \`${state.arenaWinRate}%\` | Total Trades: \`${state.totalArenaTrades}\`\n` +
-    `⚡️ *Active Live Positions:* \`${state.activeTrades.length}\`\n` +
-    `🧠 *AI Learning Cycles:* \`${state.learningCyclesCompleted}\`\n` +
+    `⏱ <b>24/7 Cloud Uptime:</b> <code>${uptimeStr}</code>\n` +
+    `🏦 <b>Total Arena Capital:</b> <code>$${state.totalArenaBalance.toFixed(2)}</code> (${arenaPnlSign}$${state.totalArenaPnL.toFixed(2)})\n` +
+    `📊 <b>Arena Win Rate:</b> <code>${state.arenaWinRate}%</code> | Total Trades: <code>${state.totalArenaTrades}</code>\n` +
+    `⚡️ <b>Active Live Positions:</b> <code>${state.activeTrades.length} / 200 Max</code>\n` +
+    `🧠 <b>AI Self-Learning Cycles:</b> <code>${state.learningCyclesCompleted}</code>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `🏆 *TOP 10 PERFORMING BOTS RANKING:*\n\n` +
+    `🏆 <b>TOP 10 PERFORMING BOTS (HOURLY LEADERBOARD):</b>\n\n` +
     top10Text +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 _Strict 10-Indicator Multi-Timeframe Confirmation Active. Next report in 60 mins._`;
+    `🛡 <i>Strict Rules: 3% Dynamic Margin | Dynamic Leverage | Max Loss 1.5% | 35% TP1 (BE) → 25% TP2 (Lock TP1) → 40% Runner. Next report in 60 mins.</i>`;
 }
 
 export function formatTradeTelegramMessage(

@@ -151,59 +151,34 @@ export const TelegramHubView: React.FC<TelegramHubViewProps> = ({
 
             {/* Notification Event Toggles */}
             <div className="space-y-2 pt-2 border-t border-slate-100">
-              <span className="font-bold text-slate-700 block text-xs">
-                Broadcast Alert Triggers:
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-700 block text-xs">
+                  Hourly Intelligence Dispatch:
+                </span>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  Hourly Only Mode Active
+                </span>
+              </div>
 
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer bg-emerald-50/50 p-2 rounded-xl border border-emerald-200">
                 <input
                   type="checkbox"
                   checked={notifyHourlySummary}
                   onChange={(e) => setNotifyHourlySummary(e.target.checked)}
                   className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                 />
-                <span className="text-slate-700 font-medium">Hourly Top 10 Leaderboard & Uptime Dispatch</span>
+                <span className="text-slate-900 font-bold text-xs">Hourly Top 10 Leaderboard &amp; 24/7 Cloud Uptime Report</span>
               </label>
 
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notifyOnTradeOpen}
-                  onChange={(e) => setNotifyOnTradeOpen(e.target.checked)}
-                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                />
-                <span className="text-slate-700 font-medium">Trade Open (≥9/10 Confirmation Rationale)</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notifyOnTP1}
-                  onChange={(e) => setNotifyOnTP1(e.target.checked)}
-                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                />
-                <span className="text-slate-700 font-medium">TP1 Target Hit (Min $2.00 Booked + SL to BE)</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notifyOnTP2}
-                  onChange={(e) => setNotifyOnTP2(e.target.checked)}
-                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                />
-                <span className="text-slate-700 font-medium">TP2 Target Hit & Trailing Runner Activation</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notifyOnStopLoss}
-                  onChange={(e) => setNotifyOnStopLoss(e.target.checked)}
-                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                />
-                <span className="text-slate-700 font-medium">Stop Loss Defense & AI Mistake Learning Event</span>
-              </label>
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1">
+                <div className="font-bold text-slate-800 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Trade-by-Trade Data Stream Suppressed</span>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Per your mandate, individual trade events (Open, TP1, TP2, SL) are suppressed from broadcasting to Telegram. Only the consolidated 1-hour intelligence report is delivered every 60 minutes.
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center justify-between pt-2">
@@ -248,8 +223,8 @@ export const TelegramHubView: React.FC<TelegramHubViewProps> = ({
               <div className="font-bold text-slate-900">═══════════════════════════════</div>
               <div>💰 Total Arena Capital: <strong>${state.totalArenaBalance.toFixed(2)}</strong> ({state.totalArenaPnL >= 0 ? '+' : ''}${state.totalArenaPnL.toFixed(2)})</div>
               <div>🏆 Arena Win Rate: <strong>{state.arenaWinRate}%</strong> ({state.totalArenaWins}W / {state.totalArenaLosses}L)</div>
-              <div>⚡️ Active Running Trades: <strong>{state.activeTrades.length}</strong></div>
-              <div>🛡 Min Profit Floor: <strong>$2.00 on TP1</strong> (Risk Capped at 3%)</div>
+              <div>⚡️ Active Running Trades: <strong>{state.activeTrades.length} / 200 Max</strong></div>
+              <div>🛡 Multi-Tier Rules: <strong>35% TP1 (BE) → 25% TP2 (Lock TP1) → 40% Runner</strong></div>
               <div className="pt-1 font-bold text-slate-900">🏅 TOP 10 RANKED BOT FLEET:</div>
               {top10Bots.map((b, idx) => (
                 <div key={b.id} className="text-slate-700">

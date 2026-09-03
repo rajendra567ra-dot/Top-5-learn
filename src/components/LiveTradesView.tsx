@@ -65,11 +65,11 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
               Live Trades & Multi-Tier TP Engine
             </h2>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-              No Position Limits
+              Max 200 Live Trades (Max 5/Bot)
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5 font-medium">
-            Strict Execution Floor: <strong>Min $2.00 Profit on TP1</strong> → SL moves to Entry Break-Even → TP2 & 40% Trailing Runner
+            Risk Architecture: <strong>3% Dynamic Margin</strong> | <strong>Dynamic Leverage</strong> | <strong>Max Loss 1.5%</strong> | Book 35% TP1 (SL to BE) → Book 25% TP2 (SL to TP1) → 40% Structural Trailing Runner
           </p>
         </div>
 
@@ -279,7 +279,7 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
                         <div className="flex items-center justify-between text-[11px]">
                           <span className="text-slate-500 font-bold uppercase text-[10px]">Multi-Tier TP Milestones:</span>
                           <span className="text-emerald-700 font-mono font-bold text-[10px]">
-                            Floor: Min $2.00 Booked at TP1
+                            35% TP1 (BE) → 25% TP2 (Lock TP1) → 40% Runner
                           </span>
                         </div>
 
@@ -292,12 +292,12 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
                           }`}>
                             <div className="text-[10px] font-sans font-bold flex items-center justify-center gap-1">
                               {trade.tp1Hit ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Target className="w-3 h-3 text-slate-400" />}
-                              TP1 (Min $2.00)
+                              TP1 (Book 35% → BE)
                             </div>
                             <div className="mt-0.5">${trade.tp1Price}</div>
                             {trade.tp1Hit && (
                               <div className="text-[9px] text-emerald-700 font-bold mt-0.5">
-                                +${trade.tp1BookedAmount?.toFixed(2) || '2.05'} Booked
+                                +${trade.tp1BookedAmount?.toFixed(2) || '0.00'} Booked
                               </div>
                             )}
                           </div>
@@ -310,12 +310,12 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
                           }`}>
                             <div className="text-[10px] font-sans font-bold flex items-center justify-center gap-1">
                               {trade.tp2Hit ? <CheckCircle2 className="w-3 h-3 text-cyan-600" /> : <Target className="w-3 h-3 text-slate-400" />}
-                              TP2
+                              TP2 (Book 25% → TP1)
                             </div>
                             <div className="mt-0.5">${trade.tp2Price}</div>
                             {trade.tp2Hit && (
                               <div className="text-[9px] text-cyan-700 font-bold mt-0.5">
-                                +${trade.tp2BookedAmount?.toFixed(2) || '1.50'} Booked
+                                +${trade.tp2BookedAmount?.toFixed(2) || '0.00'} Booked
                               </div>
                             )}
                           </div>
@@ -327,7 +327,7 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
                               : 'bg-slate-50 border-slate-200 text-slate-500'
                           }`}>
                             <div className="text-[10px] font-sans font-bold">40% Trailing Runner</div>
-                            <div className="mt-0.5">{trade.tp2Hit ? 'Active & Trailing' : 'Locked until TP2'}</div>
+                            <div className="mt-0.5">{trade.tp2Hit ? 'Trailing Structure' : 'Locked until TP2'}</div>
                           </div>
                         </div>
                       </div>

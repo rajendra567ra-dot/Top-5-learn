@@ -117,7 +117,7 @@ export const AIBrainHubView: React.FC<AIBrainHubViewProps> = ({
               3. Automatic Strategy Evolution
             </div>
             <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-              Dynamically tightens RSI inner corridors, increases minimum RVOL requirements, and enforces the $2.00 min profit target floor.
+              Dynamically tightens RSI inner corridors, calibrates dynamic leverage, enforces 3% dynamic capital allocation, and optimizes structural trailing stops.
             </p>
           </div>
         </div>
@@ -166,9 +166,9 @@ export const AIBrainHubView: React.FC<AIBrainHubViewProps> = ({
             </div>
 
             <div className="p-2 rounded-lg bg-white border border-purple-200">
-              <div className="text-[10px] text-slate-500 font-bold uppercase">TP1 Target Floor</div>
+              <div className="text-[10px] text-slate-500 font-bold uppercase">TP1 Target Allocation</div>
               <div className="font-mono font-bold text-emerald-700 mt-0.5">
-                ${selectedBot.aiBrain.adaptedParameters.tp1ProfitTargetUsd.toFixed(2)} Min Profit
+                {selectedBot.aiBrain.adaptedParameters.tp1ProfitTargetPercent || 35}% Booked (SL → BE)
               </div>
             </div>
           </div>

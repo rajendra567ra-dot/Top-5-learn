@@ -56,10 +56,10 @@ function initializeFreshArenaState(): ArenaFleetState {
       chatId: '',
       enabled: false,
       summaryIntervalMinutes: 60,
-      notifyOnTradeOpen: true,
-      notifyOnTP1: true,
-      notifyOnTP2: true,
-      notifyOnStopLoss: true,
+      notifyOnTradeOpen: false,
+      notifyOnTP1: false,
+      notifyOnTP2: false,
+      notifyOnStopLoss: false,
       notifyHourlySummary: true,
       lastDispatchTimestamp: Date.now(),
       lastStatus: 'STANDBY',
@@ -108,6 +108,15 @@ function loadStateFromDisk(): ArenaFleetState {
           return c;
         });
 
+        // Enforce user mandate: Only send hourly report, never send every trade data
+        if (parsed.telegramConfig) {
+          parsed.telegramConfig.notifyOnTradeOpen = false;
+          parsed.telegramConfig.notifyOnTP1 = false;
+          parsed.telegramConfig.notifyOnTP2 = false;
+          parsed.telegramConfig.notifyOnStopLoss = false;
+          parsed.telegramConfig.notifyHourlySummary = true;
+        }
+
         // Filter out any stale trades with wildly outdated prices (e.g. old OP at $1.08)
         if (Array.isArray(parsed.activeTrades)) {
           parsed.activeTrades = parsed.activeTrades.filter((t: TradePosition) => {
@@ -151,22 +160,44 @@ async function sendTelegramNotification(type: TelegramLog['type'], title: string
 
   const { botToken, chatId, enabled } = arenaState.telegramConfig;
 
-  if (enabled && botToken && chatId) {
+  // USER DIRECTIVE: ONLY hourly report should be sent to Telegram, not individual trade data!
+  // Allowed types for Telegram broadcast: HOURLY_REPORT and SYSTEM (manual test button)
+  const isAllowedToBroadcast = type === 'HOURLY_REPORT' || type === 'SYSTEM';
+
+  if (enabled && botToken && chatId && isAllowedToBroadcast) {
     try {
       const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-      const response = await fetch(url, {
+      
+      // Attempt sending with parse_mode HTML
+      let response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
           text,
-          parse_mode: 'Markdown',
+          parse_mode: 'HTML',
         }),
       });
-      const data = await response.json();
+      let data = await response.json();
+
+      // If HTML entity parsing fails, retry as clean plain text without parse_mode
+      if (!data.ok && data.description && (data.description.includes('can\'t parse') || data.description.includes('entity') || data.description.includes('Bad Request'))) {
+        const plainText = text.replace(/<[^>]+>/g, '');
+        response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: plainText,
+          }),
+        });
+        data = await response.json();
+      }
+
       if (data.ok) {
         logEntry.status = 'SENT';
-        arenaState.telegramConfig.lastStatus = `Delivered at ${new Date().toLocaleTimeString()}`;
+        arenaState.telegramConfig.lastStatus = `Hourly Report Delivered at ${new Date().toLocaleTimeString()}`;
+        arenaState.telegramConfig.lastDispatchTimestamp = Date.now();
       } else {
         logEntry.status = 'FAILED';
         arenaState.telegramConfig.lastStatus = `Failed: ${data.description || 'API Error'}`;
@@ -312,19 +343,8 @@ setInterval(async () => {
     if (botIndex !== -1) {
       const bot = arenaState.bots[botIndex];
 
-      if (eventFired === 'TP1_HIT') {
-        // Dispatch Telegram TP1 alert
-        if (arenaState.telegramConfig.notifyOnTP1) {
-          const msg = formatTradeTelegramMessage('TP1', updatedTrade);
-          sendTelegramNotification('TP1_HIT', `🎯 TP1 HIT: ${updatedTrade.symbol} (+ $${updatedTrade.tp1BookedAmount?.toFixed(2) || '2.05'} Booked)`, msg, updatedTrade.botSerialNumber);
-        }
-      } else if (eventFired === 'TP2_HIT') {
-        // Dispatch Telegram TP2 alert
-        if (arenaState.telegramConfig.notifyOnTP2) {
-          const msg = formatTradeTelegramMessage('TP2', updatedTrade);
-          sendTelegramNotification('TP2_HIT', `💎 TP2 HIT: ${updatedTrade.symbol} (Secured)`, msg, updatedTrade.botSerialNumber);
-        }
-      }
+      // Trade milestone events (TP1 / TP2) are tracked in trade state;
+      // Per user mandate, individual trade events are NOT sent to Telegram (hourly reports only)
 
       // If trade closed
       if (updatedTrade.status === 'CLOSED_TP' || updatedTrade.status === 'CLOSED_SL') {
@@ -360,17 +380,6 @@ setInterval(async () => {
         // Automatic Strategy Adaptation from Past Performance (Wins & Losses)
         adaptBotStrategyFromPast(bot, updatedTrade, isWin ? 'WIN' : 'LOSS');
 
-        // Telegram Notification for Trade Close
-        if (arenaState.telegramConfig.notifyOnStopLoss || isWin) {
-          const msg = formatTradeTelegramMessage(isWin ? 'TP2' : 'SL', updatedTrade);
-          sendTelegramNotification(
-            isWin ? 'TP2_HIT' : 'STOP_LOSS',
-            `${isWin ? '🏆 WIN' : '🛡 SL'}: ${updatedTrade.symbol} Closed (${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)})`,
-            msg,
-            updatedTrade.botSerialNumber
-          );
-        }
-
         arenaState.closedTrades.unshift(updatedTrade);
         if (arenaState.closedTrades.length > 500) arenaState.closedTrades.pop();
       } else {
@@ -384,65 +393,61 @@ setInterval(async () => {
   arenaState.activeTrades = remainingActiveTrades;
 
   // 3. Autonomous Bot Opportunity Scanner (Supports BOTH LONG and SHORT positions)
-  const scanBatches = 3;
-  for (let b = 0; b < scanBatches; b++) {
-    const randomBotIndex = Math.floor(Math.random() * arenaState.bots.length);
-    const bot = arenaState.bots[randomBotIndex];
+  // MANDATE: Max 200 live trades total, Max 5 trades per bot at a time.
+  // MANDATE: "if not confirmed don't trade it's for maximum" -> Strictly require evalResult.qualifies
+  if (arenaState.activeTrades.length < 200) {
+    const scanBatches = 12;
+    for (let b = 0; b < scanBatches; b++) {
+      if (arenaState.activeTrades.length >= 200) break;
 
-    // Enforce high-conviction focus: max 2 active trades per bot
-    if (bot.activeTradesCount >= 2) continue;
+      const randomBotIndex = Math.floor(Math.random() * arenaState.bots.length);
+      const bot = arenaState.bots[randomBotIndex];
 
-    // Pick candidate: alternate between bearish candidates (for SHORT) and bullish candidates (for LONG)
-    let candidateCoin: CryptoCoin;
-    const searchForShort = Math.random() > 0.5;
+      // Enforce: max 5 active trades per bot at a time
+      if (bot.activeTradesCount >= 5) continue;
 
-    if (searchForShort) {
-      // Find coins with negative 24h change or bearish momentum
-      const bearPool = arenaState.coins.filter(c => (c.change24h < -0.1 || c.trend === 'BEARISH') && !isHighDecimalOrBlacklistedCoin(c.symbol, c.price));
-      candidateCoin = bearPool.length > 0 
-        ? bearPool[Math.floor(Math.random() * bearPool.length)]
-        : arenaState.coins[Math.floor(Math.random() * arenaState.coins.length)];
-    } else {
-      // Find coins with positive 24h change or bullish momentum
-      const bullPool = arenaState.coins.filter(c => (c.change24h > 0.1 || c.trend === 'BULLISH') && !isHighDecimalOrBlacklistedCoin(c.symbol, c.price));
-      candidateCoin = bullPool.length > 0 
-        ? bullPool[Math.floor(Math.random() * bullPool.length)]
-        : arenaState.coins[Math.floor(Math.random() * arenaState.coins.length)];
-    }
+      // Pick candidate: alternate between bearish candidates (for SHORT) and bullish candidates (for LONG)
+      let candidateCoin: CryptoCoin;
+      const searchForShort = Math.random() > 0.5;
 
-    if (candidateCoin && !isHighDecimalOrBlacklistedCoin(candidateCoin.symbol, candidateCoin.price)) {
-      // Check if bot already has an active trade on this symbol
-      const alreadyInTrade = arenaState.activeTrades.some(
-        t => t.botId === bot.id && t.symbol === `${candidateCoin.symbol}/USDT`
-      );
+      if (searchForShort) {
+        // Find coins with negative 24h change or bearish momentum
+        const bearPool = arenaState.coins.filter(c => (c.change24h < -0.1 || c.trend === 'BEARISH') && !isHighDecimalOrBlacklistedCoin(c.symbol, c.price));
+        candidateCoin = bearPool.length > 0 
+          ? bearPool[Math.floor(Math.random() * bearPool.length)]
+          : arenaState.coins[Math.floor(Math.random() * arenaState.coins.length)];
+      } else {
+        // Find coins with positive 24h change or bullish momentum
+        const bullPool = arenaState.coins.filter(c => (c.change24h > 0.1 || c.trend === 'BULLISH') && !isHighDecimalOrBlacklistedCoin(c.symbol, c.price));
+        candidateCoin = bullPool.length > 0 
+          ? bullPool[Math.floor(Math.random() * bullPool.length)]
+          : arenaState.coins[Math.floor(Math.random() * arenaState.coins.length)];
+      }
 
-      if (!alreadyInTrade) {
-        const evalResult = evaluateBotConfirmation(bot, candidateCoin);
+      if (candidateCoin && !isHighDecimalOrBlacklistedCoin(candidateCoin.symbol, candidateCoin.price)) {
+        // Check if bot already has an active trade on this symbol
+        const alreadyInTrade = arenaState.activeTrades.some(
+          t => t.botId === bot.id && t.symbol === `${candidateCoin.symbol}/USDT`
+        );
 
-        if (evalResult.qualifies) {
-          // Create Trade Position with TP1 closer than SL and Min $2.00 profit floor
-          const newTrade = calculateTradeParameters(
-            bot,
-            candidateCoin,
-            evalResult.direction,
-            evalResult.confidenceScore,
-            evalResult.confirmedCount,
-            evalResult.evaluatedRules,
-            evalResult.rationale
-          );
+        if (!alreadyInTrade) {
+          const evalResult = evaluateBotConfirmation(bot, candidateCoin);
 
-          arenaState.activeTrades.unshift(newTrade);
-          bot.activeTradesCount += 1;
-
-          // Dispatch Telegram Open Alert
-          if (arenaState.telegramConfig.notifyOnTradeOpen) {
-            const msg = formatTradeTelegramMessage('OPEN', newTrade);
-            sendTelegramNotification(
-              'TRADE_OPEN',
-              `🚀 ${bot.serialNumber} OPENED ${newTrade.direction} on ${newTrade.symbol} (${newTrade.confidenceScore}% Confidence - TP1 Closer than SL)`,
-              msg,
-              bot.serialNumber
+          // STRICT CONFIRMATION MANDATE: "if not confirmed don't trade it's for maximum"
+          if (evalResult.qualifies) {
+            // Create Trade Position with 3% capital, dynamic leverage, 1.5% max loss, 35% TP1 (BE), 25% TP2, 40% runner
+            const newTrade = calculateTradeParameters(
+              bot,
+              candidateCoin,
+              evalResult.direction,
+              evalResult.confidenceScore,
+              evalResult.confirmedCount,
+              evalResult.evaluatedRules,
+              evalResult.rationale
             );
+
+            arenaState.activeTrades.unshift(newTrade);
+            bot.activeTradesCount += 1;
           }
         }
       }
@@ -473,9 +478,12 @@ setInterval(async () => {
 
   // 5. Hourly Telegram Summary Dispatcher Check (every 60 mins)
   const summaryIntervalMs = (arenaState.telegramConfig.summaryIntervalMinutes || 60) * 60 * 1000;
-  if (now - arenaState.lastHourlySummaryTimestamp >= summaryIntervalMs) {
+  const isTimeForHourly = (!arenaState.lastHourlySummaryTimestamp && arenaState.telegramConfig.enabled && arenaState.telegramConfig.botToken && arenaState.telegramConfig.chatId)
+    || (now - arenaState.lastHourlySummaryTimestamp >= summaryIntervalMs);
+
+  if (isTimeForHourly) {
     arenaState.lastHourlySummaryTimestamp = now;
-    if (arenaState.telegramConfig.notifyHourlySummary) {
+    if (arenaState.telegramConfig.enabled && arenaState.telegramConfig.botToken && arenaState.telegramConfig.chatId && arenaState.telegramConfig.notifyHourlySummary !== false) {
       const summaryMsg = formatHourlyTelegramSummary(arenaState);
       sendTelegramNotification(
         'HOURLY_REPORT',
@@ -570,18 +578,20 @@ app.post('/api/arena/telegram/config', (req, res) => {
 });
 
 app.post('/api/arena/telegram/hourly-trigger', async (req, res) => {
+  arenaState.lastHourlySummaryTimestamp = Date.now();
   const msg = formatHourlyTelegramSummary(arenaState);
   await sendTelegramNotification('HOURLY_REPORT', '📊 INSTANT 1-HOUR ARENA SUMMARY DISPATCH', msg);
+  saveStateToDisk();
   res.json({ status: 'ok', message: 'Hourly summary dispatched', lastStatus: arenaState.telegramConfig.lastStatus });
 });
 
 app.post('/api/arena/telegram/test', async (req, res) => {
-  const testMsg = `🧪 *APEX 40 AI CRYPTO BOT ARENA — WEBHOOK TEST*\n` +
+  const testMsg = `🧪 <b>APEX 40 AI CRYPTO BOT ARENA — WEBHOOK TEST</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `✅ *Connection Status:* LIVE & VERIFIED\n` +
-    `🤖 *Active Arena Bots:* 40 Autonomous AI Units\n` +
-    `⏱ *24/7 Cloud Host:* Connected\n` +
-    `📡 *Telegram Relay:* Operational`;
+    `✅ <b>Connection Status:</b> LIVE &amp; OPERATIONAL\n` +
+    `🤖 <b>Active Arena Bots:</b> 40 Autonomous AI Units\n` +
+    `⏱ <b>24/7 Cloud Host:</b> Connected\n` +
+    `📡 <b>Telegram Relay:</b> Hourly Intelligence Dispatch Ready`;
   
   await sendTelegramNotification('SYSTEM', '🧪 TELEGRAM BOT CONNECTION TEST', testMsg);
   res.json({ status: 'ok', message: 'Test message sent', lastStatus: arenaState.telegramConfig.lastStatus });

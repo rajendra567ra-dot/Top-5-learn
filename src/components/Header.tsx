@@ -132,7 +132,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div>
                 <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Active Live Trades</div>
                 <div className="text-sm font-bold text-amber-700 font-mono">
-                  {state.activeTrades.length} Positions
+                  {state.activeTrades.length} / 200 Max
                 </div>
               </div>
             </div>

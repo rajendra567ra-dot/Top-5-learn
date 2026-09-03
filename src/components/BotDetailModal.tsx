@@ -220,9 +220,9 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
           </div>
 
           <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs">
-            <div className="text-[10px] uppercase font-bold text-slate-500">Min Profit & Risk Floor</div>
+            <div className="text-[10px] uppercase font-bold text-slate-500">Risk & Margin Structure</div>
             <div className="text-xs font-bold text-slate-800 mt-1">
-              🎯 Min $2.00 TP1 | Max 3% SL
+              🎯 3% Margin | 1.5% Max Loss | Dynamic Lev
             </div>
           </div>
 
@@ -542,7 +542,7 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                             <th className="px-3 py-2.5">Asset / Dir</th>
                             <th className="px-3 py-2.5">Entry / Targets</th>
                             <th className="px-3 py-2.5">Status</th>
-                            <th className="px-3 py-2.5 text-right">PnL (Min $2.00 TP1)</th>
+                            <th className="px-3 py-2.5 text-right">PnL (35% TP1 / 25% TP2 / 40% Runner)</th>
                             <th className="px-3 py-2.5">AI Confirmation / Exit Note</th>
                           </tr>
                         </thead>
@@ -769,20 +769,20 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                 <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200">
                   <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
                     <Target className="w-3.5 h-3.5 text-emerald-600" />
-                    🎯 TP1 Target (Min $2.00 PnL)
+                    🎯 TP1 Target (Book 35% &amp; SL to BE)
                   </div>
                   <div className="text-emerald-900 text-[11px] leading-relaxed">
-                    Secures at least <strong>$2.00 profit</strong> when hit. Automatically shifts Stop Loss to Entry Break-Even eliminating remaining risk.
+                    Books <strong>35% position profit</strong> when hit. Automatically shifts Stop Loss to Entry Break-Even (BE), eliminating further downside risk.
                   </div>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-cyan-50/70 border border-cyan-200">
                   <div className="font-bold text-cyan-800 mb-1 flex items-center gap-1">
                     <Target className="w-3.5 h-3.5 text-cyan-600" />
-                    💎 TP2 Target (Secondary Profit)
+                    💎 TP2 Target (Book 25% &amp; Lock TP1)
                   </div>
                   <div className="text-cyan-900 text-[11px] leading-relaxed">
-                    Captures secondary impulse. Secures additional profit & shifts Stop Loss to TP1 price to lock major upside gains.
+                    Books <strong>25% position profit</strong>. Automatically shifts Stop Loss to TP1 price, locking in major gains for the 40% runner.
                   </div>
                 </div>
 

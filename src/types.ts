@@ -67,7 +67,8 @@ export interface AdaptedStrategyParameters {
   minRvol: number;
   minConfirmationRules: number;
   minConfidenceScore: number;
-  tp1ProfitTargetUsd: number; // Min $2.00
+  tp1ProfitTargetPercent: number; // 35% position booked at TP1
+  tp1ProfitTargetUsd?: number;
   slDistancePercent: number;
   tp1DistancePercent: number;
   tp2DistancePercent: number;
