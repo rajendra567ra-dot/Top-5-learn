@@ -127,6 +127,21 @@ function loadStateFromDisk(): ArenaFleetState {
               return false;
             }
             return true;
+          }).map((t: TradePosition) => {
+            // Keep all data as it is, calibrate TP1 to equal distance of SL compared to entry price
+            if (!t.tp1Hit && t.slMode === 'INITIAL') {
+              const slDist = Math.abs(t.stopLossPrice - t.entryPrice);
+              const dec = t.entryPrice < 0.1 ? 5 : t.entryPrice < 1 ? 4 : t.entryPrice < 10 ? 3 : 2;
+              const formattedDist = parseFloat(slDist.toFixed(dec));
+              if (t.direction === 'LONG') {
+                t.tp1Price = parseFloat((t.entryPrice + formattedDist).toFixed(dec));
+                t.tp2Price = parseFloat((t.entryPrice + (formattedDist * 2)).toFixed(dec));
+              } else {
+                t.tp1Price = parseFloat((t.entryPrice - formattedDist).toFixed(dec));
+                t.tp2Price = parseFloat((t.entryPrice - (formattedDist * 2)).toFixed(dec));
+              }
+            }
+            return t;
           });
         }
         return parsed;

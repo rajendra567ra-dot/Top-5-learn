@@ -141,7 +141,7 @@ export interface TradePosition {
   slMode: 'INITIAL' | 'BREAKEVEN_TP1' | 'LOCKED_TP2' | 'TRAILING_RUNNER';
 
   // Multi-tier TP Targets
-  tp1Price: number; // Closer than SL for fast de-risking
+  tp1Price: number; // Equal distance of SL compared to entry price (1:1 from entry)
   tp1Hit: boolean;
   tp1HitTime?: number;
   tp1BookedAmount?: number; // 35% of profit booked

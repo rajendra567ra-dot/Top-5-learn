@@ -186,9 +186,9 @@ export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
         liveValue = `Volatility: ${coin.volatility}% (Optimal Scalp/Swing Corridor)`;
         break;
 
-      case 9: // Stop Placement & TP1 Closer Than SL Mandate
+      case 9: // Stop Placement & TP1 Equal Distance to SL Mandate
         isConfirmed = bot.portfolioBalance >= 1.00;
-        liveValue = 'TP1 Closer Than SL (35% TP1 → BE, 25% TP2 → Lock TP1, 40% Runner)';
+        liveValue = 'TP1 Equal Distance to SL (35% TP1 → BE, 25% TP2 → Lock TP1, 40% Runner)';
         break;
 
       case 10: // 5M Trigger & Setup Quality Check
@@ -220,7 +220,7 @@ export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
   // Qualification: Must satisfy ≥8 of 10 rules AND meet ≥86% confidence
   const qualifies = confirmedCount >= minRequiredRules && confidenceScore >= minRequiredConf && (coin.currentSetupQuality || 85) >= 80;
 
-  const rationale = `${bot.name} (${bot.serialNumber}) [Gen ${bot.aiBrain.evolutionGeneration || 1}] confirmed ${confirmedCount}/10 institutional rules on ${coin.symbol} (${direction}) with ${confidenceScore}% conviction. TP1 is set closer than SL for rapid de-risking.`;
+  const rationale = `${bot.name} (${bot.serialNumber}) [Gen ${bot.aiBrain.evolutionGeneration || 1}] confirmed ${confirmedCount}/10 institutional rules on ${coin.symbol} (${direction}) with ${confidenceScore}% conviction. TP1 is set at equal distance to SL (1:1 from entry price).`;
 
   return {
     qualifies,
@@ -347,16 +347,19 @@ export function calculateTradeParameters(
   // maxLossUsd / positionSize = (0.015 * balance) / (0.03 * balance * leverage) = 0.5 / leverage
   const slDistancePercent = parseFloat((0.5 / leverage).toFixed(4));
 
-  // MANDATE: TP1 MUST BE CLOSER TO ENTRY PRICE THAN SL IS
-  // Set TP1 to 50% of the SL distance (fast de-risking milestone)
-  const tp1DistancePercent = parseFloat((slDistancePercent * 0.50).toFixed(4));
-  const tp2DistancePercent = parseFloat((tp1DistancePercent * 2.20).toFixed(4));
+  // MANDATE: TP1 MUST BE EQUAL DISTANCE TO SL COMPARED TO ENTRY PRICE
+  // Distance from entry price to TP1 = Distance from entry price to SL
+  const tp1DistancePercent = slDistancePercent;
+  const tp2DistancePercent = parseFloat((slDistancePercent * 2.0).toFixed(4));
 
   // Format price helper with appropriate precision for any asset tier (OP at $0.0970, BTC at $77,318)
+  const dec = entryPrice < 0.1 ? 5 : entryPrice < 1 ? 4 : entryPrice < 10 ? 3 : 2;
   const formatPrice = (val: number): number => {
-    const dec = entryPrice < 0.1 ? 5 : entryPrice < 1 ? 4 : entryPrice < 10 ? 3 : 2;
     return parseFloat(val.toFixed(dec));
   };
+
+  // Exact distance in price units so |tp1Price - entryPrice| === |initialStopLossPrice - entryPrice|
+  const distInPrice = parseFloat((entryPrice * slDistancePercent).toFixed(dec));
   
   let initialStopLossPrice: number;
   let tp1Price: number;
@@ -365,17 +368,17 @@ export function calculateTradeParameters(
 
   if (direction === 'LONG') {
     // LONG: TP is higher than entry, SL is lower than entry
-    // TP1 is closer than SL
-    initialStopLossPrice = formatPrice(entryPrice * (1 - slDistancePercent));
-    tp1Price = formatPrice(entryPrice * (1 + tp1DistancePercent));
-    tp2Price = formatPrice(entryPrice * (1 + tp2DistancePercent));
+    // Equal distance: entryPrice - SL === TP1 - entryPrice
+    initialStopLossPrice = formatPrice(entryPrice - distInPrice);
+    tp1Price = formatPrice(entryPrice + distInPrice);
+    tp2Price = formatPrice(entryPrice + (distInPrice * 2));
     liquidationPrice = formatPrice(entryPrice * (1 - (1 / leverage) * 0.9));
   } else {
     // SHORT: TP is lower than entry, SL is higher than entry
-    // TP1 is closer than SL
-    initialStopLossPrice = formatPrice(entryPrice * (1 + slDistancePercent));
-    tp1Price = formatPrice(entryPrice * (1 - tp1DistancePercent));
-    tp2Price = formatPrice(entryPrice * (1 - tp2DistancePercent));
+    // Equal distance: SL - entryPrice === entryPrice - TP1
+    initialStopLossPrice = formatPrice(entryPrice + distInPrice);
+    tp1Price = formatPrice(entryPrice - distInPrice);
+    tp2Price = formatPrice(entryPrice - (distInPrice * 2));
     liquidationPrice = formatPrice(entryPrice * (1 + (1 / leverage) * 0.9));
   }
 

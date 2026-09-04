@@ -542,11 +542,11 @@ const BOT_DEFINITIONS: BotConfigDef[] = [
     rule4: 'Low Spread & Slippage Environment (<0.06%)',
     rule5: 'Orderbook Resting Depth at Support Floor > $2M',
     rule6: '1M Micro Break of Structure with Fast Impulse',
-    rule7: 'Quick TP1 Target (1.2R) Placed Closer than SL for Fast Safety',
+    rule7: 'Quick TP1 Target Placed at Equal Distance of SL for 1:1 Safety',
     rule8: 'Dynamic Capital Allocation Strictly at 4.5% Cap',
     rule9: 'Stop Loss Defined 0.6% Below 5M Base Candle',
     rule10: '5M Green Close with Zero Lower Shadow',
-    insight: 'Placing TP1 closer than SL ensures >78% of trades reach break-even risk status.',
+    insight: 'Placing TP1 at equal distance of SL ensures structured 1:1 initial de-risking and break-even status.',
   },
   {
     number: '26',
@@ -909,7 +909,7 @@ export function generateAll40Bots(): ArenaBot[] {
         antiRepeatRulesActive: [
           'Mandatory minimum 9/10 confirmation rules before execution',
           'Strict 3% max loss stop loss execution',
-          'Fast TP1 (closer than SL) 35% profit lock & move SL to entry BE',
+          'Equal distance TP1 (1:1 with SL) 35% profit lock & move SL to entry BE',
           'TP2 25% profit lock & move SL to TP1'
         ],
         mistakeMemory: [],

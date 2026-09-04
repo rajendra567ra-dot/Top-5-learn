@@ -240,7 +240,7 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
                             <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] mb-1.5 px-0.5">
                               <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                                 <Target className="w-3 h-3 text-emerald-600" />
-                                TP1 is Closer than SL ({tp1DistPercent}% TP1 vs {slDistPercent}% SL)
+                                TP1 Equal Distance to SL ({tp1DistPercent}% TP1 = {slDistPercent}% SL)
                               </span>
                               <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-mono text-[10px]">
                                 <Sparkles className="w-3 h-3 text-amber-600" />
