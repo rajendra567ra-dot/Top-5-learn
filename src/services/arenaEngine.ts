@@ -7,6 +7,7 @@ import {
   BotBrainMistakeLog,
   ArenaFleetState 
 } from '../types';
+import { isHighDecimalOrBlacklistedCoin } from '../data/topCoins';
 
 export function adaptBotStrategyFromPast(
   bot: ArenaBot, 
@@ -82,6 +83,18 @@ export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
   rationale: string;
   evaluatedRules: BotConfirmationRule[];
 } {
+  // 0. Strict Contract & Asset Verification Gate (Exclude unverified contracts, KAS/Kaspa, or low-decimal tokens)
+  if (isHighDecimalOrBlacklistedCoin(coin.symbol, coin.price) || !coin.isVerified || !coin.contractAddress) {
+    return {
+      qualifies: false,
+      confirmedCount: 0,
+      confidenceScore: 0,
+      direction: 'LONG',
+      rationale: `Rejected: ${coin.symbol} failed contract address verification or is on the excluded asset blacklist (including KAS).`,
+      evaluatedRules: bot.confirmationRules.map(r => ({ ...r, isConfirmed: false, liveValue: 'Contract/Asset Rejected' })),
+    };
+  }
+
   // Determine high-conviction direction: support BOTH LONG and SHORT setups
   // If coin is falling/bearish or has sell momentum -> SHORT
   // If coin is rising/bullish or has buy momentum -> LONG

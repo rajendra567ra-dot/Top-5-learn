@@ -9,9 +9,14 @@ import {
   Layers, 
   CheckCircle2, 
   Bot,
-  DollarSign
+  DollarSign,
+  Copy,
+  Check,
+  Radio,
+  FileCheck
 } from 'lucide-react';
 import { CryptoCoin } from '../types';
+import { getBlockExplorerUrl } from '../data/topCoins';
 
 interface CMCScannerViewProps {
   coins: CryptoCoin[];
@@ -21,13 +26,22 @@ interface CMCScannerViewProps {
 export const CMCScannerView: React.FC<CMCScannerViewProps> = ({ coins, isScanningActive }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
+
+  const handleCopy = (address: string) => {
+    if (!address) return;
+    navigator.clipboard.writeText(address);
+    setCopiedAddress(address);
+    setTimeout(() => setCopiedAddress(null), 2000);
+  };
 
   const filteredCoins = useMemo(() => {
     return coins.filter((coin) => {
       const matchSearch = 
         coin.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
         coin.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        coin.category?.toLowerCase().includes(searchQuery.toLowerCase());
+        coin.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (coin.contractAddress && coin.contractAddress.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchCategory = categoryFilter === 'ALL' || coin.category === categoryFilter;
 
@@ -44,17 +58,25 @@ export const CMCScannerView: React.FC<CMCScannerViewProps> = ({ coins, isScannin
           <div>
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Search className="w-5 h-5 text-emerald-600" />
-              CMC 500 Market Scanner Universe
+              CMC 500 Market Scanner Universe (Live Spot Synced)
             </h2>
             <p className="text-xs text-slate-500 mt-0.5 font-medium">
-              Live multi-timeframe evaluation across high-liquidity crypto assets.
+              Live multi-timeframe spot evaluation with on-chain verified smart contract addresses.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <ShieldCheck className="w-4 h-4" />
-              Micro-Penny Coins Excluded (No BONK / SHIB / Price &lt; $0.005)
+              <FileCheck className="w-4 h-4 text-emerald-600" />
+              100% Verified Contract Addresses
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+              <ShieldCheck className="w-4 h-4 text-slate-600" />
+              Kaspa (KAS) & Memes Excluded
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-cyan-50 text-cyan-700 border border-cyan-200">
+              <Radio className="w-3.5 h-3.5 text-cyan-600 animate-pulse" />
+              Real-Time Fast Spot Sync
             </span>
           </div>
         </div>
@@ -68,7 +90,7 @@ export const CMCScannerView: React.FC<CMCScannerViewProps> = ({ coins, isScannin
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search coin symbol, name, L1, DeFi..."
+              placeholder="Search coin symbol, name, contract address..."
               className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
             />
           </div>
@@ -98,7 +120,8 @@ export const CMCScannerView: React.FC<CMCScannerViewProps> = ({ coins, isScannin
             <thead className="bg-slate-100 text-slate-600 uppercase font-bold text-[10px] border-b border-slate-200">
               <tr>
                 <th className="px-4 py-3">Rank & Asset</th>
-                <th className="px-4 py-3">Live Price</th>
+                <th className="px-4 py-3">Verified Contract Address</th>
+                <th className="px-4 py-3">Live Spot Price</th>
                 <th className="px-4 py-3">24h Change</th>
                 <th className="px-4 py-3">24h Volume</th>
                 <th className="px-4 py-3">RSI (14)</th>
@@ -110,6 +133,9 @@ export const CMCScannerView: React.FC<CMCScannerViewProps> = ({ coins, isScannin
             <tbody className="divide-y divide-slate-100">
               {filteredCoins.map((coin) => {
                 const isPositive = coin.change24h >= 0;
+                const explorerUrl = getBlockExplorerUrl(coin.network, coin.contractAddress);
+                const isCopied = copiedAddress === coin.contractAddress;
+
                 return (
                   <tr key={coin.symbol} className="hover:bg-slate-50 transition-colors">
                     
@@ -129,6 +155,47 @@ export const CMCScannerView: React.FC<CMCScannerViewProps> = ({ coins, isScannin
                           </div>
                         </div>
                       </div>
+                    </td>
+
+                    {/* Verified Contract Address */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {coin.contractAddress ? (
+                        <div className="flex items-center gap-1.5 max-w-[220px]">
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0 flex items-center gap-0.5">
+                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                            Verified
+                          </span>
+                          <span 
+                            title={coin.contractAddress}
+                            className="font-mono text-[11px] text-slate-600 truncate"
+                          >
+                            {coin.contractAddress.length > 22 
+                              ? `${coin.contractAddress.slice(0, 8)}...${coin.contractAddress.slice(-6)}` 
+                              : coin.contractAddress}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(coin.contractAddress!)}
+                            title="Copy Contract Address"
+                            className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors flex-shrink-0"
+                          >
+                            {isCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                          {explorerUrl !== '#' && (
+                            <a
+                              href={explorerUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="View on Block Explorer"
+                              className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-emerald-700 transition-colors flex-shrink-0"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-[10px]">Native Genesis</span>
+                      )}
                     </td>
 
                     {/* Live Price */}

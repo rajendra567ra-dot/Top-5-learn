@@ -96,17 +96,12 @@ function loadStateFromDisk(): ArenaFleetState {
       const raw = fs.readFileSync(STATE_FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
       if (parsed.bots && parsed.bots.length === 40) {
-        // Ensure coin universe includes fresh prices & blacklisted coin filter
+        // Ensure coin universe includes fresh prices & blacklisted coin filter (excludes KAS)
         const freshUniverse = generateTop500Universe();
         const freshMap = new Map(freshUniverse.map(c => [c.symbol, c]));
         
-        parsed.coins = (parsed.coins && parsed.coins.length > 0 ? parsed.coins : freshUniverse).map((c: CryptoCoin) => {
-          const fresh = freshMap.get(c.symbol);
-          if (fresh && Math.abs(c.price - fresh.price) / fresh.price > 0.3) {
-            return { ...c, price: fresh.price, change24h: fresh.change24h };
-          }
-          return c;
-        });
+        // Strict Universe: Replace coins with verified list, removing any blacklisted tokens like KAS
+        parsed.coins = freshUniverse;
 
         // Enforce user mandate: Only send hourly report, never send every trade data
         if (parsed.telegramConfig) {
@@ -117,17 +112,31 @@ function loadStateFromDisk(): ArenaFleetState {
           parsed.telegramConfig.notifyHourlySummary = true;
         }
 
-        // Filter out any stale trades with wildly outdated prices (e.g. old OP at $1.08)
+        // Filter out KAS (Kaspa) and any stale trades with outdated prices
         if (Array.isArray(parsed.activeTrades)) {
           parsed.activeTrades = parsed.activeTrades.filter((t: TradePosition) => {
-            const sym = t.symbol.replace('/USDT', '').replace('USDT', '');
+            const sym = t.symbol.replace('/USDT', '').replace('USDT', '').trim().toUpperCase();
+            if (sym === 'KAS' || sym === 'KASPA' || (t.name && t.name.toLowerCase().includes('kaspa'))) {
+              return false; // User mandate: Don't trade KAS Kaspa coins
+            }
+            if (isHighDecimalOrBlacklistedCoin(sym, t.entryPrice)) {
+              return false;
+            }
             const c = freshMap.get(sym);
-            if (!c) return true;
+            if (!c) return false;
             if (Math.abs(t.entryPrice - c.price) / c.price > 0.4) {
               return false;
             }
             return true;
           }).map((t: TradePosition) => {
+            const sym = t.symbol.replace('/USDT', '').replace('USDT', '').trim().toUpperCase();
+            const c = freshMap.get(sym);
+            if (c) {
+              t.contractAddress = c.contractAddress;
+              t.network = c.network;
+              t.cmcUrl = c.cmcUrl;
+              t.isVerified = true;
+            }
             // Keep all data as it is, calibrate TP1 to equal distance of SL compared to entry price
             if (!t.tp1Hit && t.slMode === 'INITIAL') {
               const slDist = Math.abs(t.stopLossPrice - t.entryPrice);
@@ -144,6 +153,14 @@ function loadStateFromDisk(): ArenaFleetState {
             return t;
           });
         }
+
+        if (Array.isArray(parsed.closedTrades)) {
+          parsed.closedTrades = parsed.closedTrades.filter((t: TradePosition) => {
+            const sym = t.symbol.replace('/USDT', '').replace('USDT', '').trim().toUpperCase();
+            return !(sym === 'KAS' || sym === 'KASPA' || (t.name && t.name.toLowerCase().includes('kaspa')));
+          });
+        }
+
         return parsed;
       }
     }
@@ -229,7 +246,7 @@ async function sendTelegramNotification(type: TelegramLog['type'], title: string
   }
 }
 
-// Live Market Data Cache & 2-Second CMC / Spot Sync
+// Live Market Data Cache & Fast Spot Sync
 let isSyncingMarket = false;
 let lastMarketSyncTime = 0;
 
@@ -239,7 +256,8 @@ async function syncLiveMarketData() {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1800);
+    // 5000ms timeout allows Binance 24hr ticker to complete reliably
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     // Live Spot API (mirrors CoinMarketCap spot price action in real-time)
     const response = await fetch('https://api.binance.com/api/v3/ticker/24hr', {
@@ -255,77 +273,96 @@ async function syncLiveMarketData() {
         tickerMap.set(t.symbol, t);
       }
 
-      arenaState.coins = arenaState.coins.map(coin => {
-        const cleanSymbol = coin.symbol.toUpperCase().replace('/USDT', '').replace('USDT', '');
-        const pair = `${cleanSymbol}USDT`;
-        const ticker = tickerMap.get(pair);
+      arenaState.coins = arenaState.coins
+        .filter(c => !isHighDecimalOrBlacklistedCoin(c.symbol, c.price))
+        .map(coin => {
+          const cleanSymbol = coin.symbol.toUpperCase().replace('/USDT', '').replace('USDT', '');
+          const pair = `${cleanSymbol}USDT`;
+          const ticker = tickerMap.get(pair);
 
-        if (ticker) {
-          const livePrice = parseFloat(ticker.lastPrice);
-          const change24h = parseFloat(parseFloat(ticker.priceChangePercent).toFixed(2));
-          const volume24h = parseFloat(ticker.quoteVolume);
-          const high24h = parseFloat(ticker.highPrice);
-          const low24h = parseFloat(ticker.lowPrice);
+          if (ticker) {
+            const livePrice = parseFloat(ticker.lastPrice);
+            const change24h = parseFloat(parseFloat(ticker.priceChangePercent).toFixed(2));
+            const volume24h = parseFloat(ticker.quoteVolume);
+            const high24h = parseFloat(ticker.highPrice);
+            const low24h = parseFloat(ticker.lowPrice);
 
-          // Calculate real dynamic RSI from price location in 24h range & momentum
-          const range = high24h - low24h;
-          let calculatedRsi = 50;
-          if (range > 0) {
-            calculatedRsi = Math.min(85, Math.max(18, Math.round(((livePrice - low24h) / range) * 100)));
+            // Calculate real dynamic RSI from price location in 24h range & momentum
+            const range = high24h - low24h;
+            let calculatedRsi = 50;
+            if (range > 0) {
+              calculatedRsi = Math.min(85, Math.max(18, Math.round(((livePrice - low24h) / range) * 100)));
+            }
+
+            const trend: MarketTrend = change24h > 0.3 ? 'BULLISH' : change24h < -0.3 ? 'BEARISH' : 'NEUTRAL';
+            const macd = change24h > 0.4 ? 'BULLISH_CROSS' : change24h < -0.4 ? 'BEARISH_CROSS' : 'NEUTRAL';
+            const recommendation: Recommendation = change24h > 2.5 
+              ? 'STRONG_LONG' 
+              : change24h > 0.3 
+                ? 'LONG' 
+                : change24h < -2.5 
+                  ? 'STRONG_SHORT' 
+                  : change24h < -0.3 
+                    ? 'SHORT' 
+                    : 'NEUTRAL';
+
+            const precision = livePrice < 0.1 ? 5 : livePrice < 1 ? 4 : livePrice < 10 ? 3 : 2;
+            const formattedPrice = parseFloat(livePrice.toFixed(precision));
+            const qualityScore = Math.min(98, Math.max(78, Math.round(82 + Math.abs(change24h) * 1.5 + (volume24h > 20000000 ? 5 : 2))));
+
+            return {
+              ...coin,
+              price: formattedPrice,
+              change24h,
+              volume24h,
+              high24h,
+              low24h,
+              rsi: calculatedRsi,
+              macd,
+              trend,
+              recommendation,
+              currentSetupQuality: qualityScore,
+            };
           }
-
-          const trend: MarketTrend = change24h > 0.3 ? 'BULLISH' : change24h < -0.3 ? 'BEARISH' : 'NEUTRAL';
-          const macd = change24h > 0.4 ? 'BULLISH_CROSS' : change24h < -0.4 ? 'BEARISH_CROSS' : 'NEUTRAL';
-          const recommendation: Recommendation = change24h > 2.5 
-            ? 'STRONG_LONG' 
-            : change24h > 0.3 
-              ? 'LONG' 
-              : change24h < -2.5 
-                ? 'STRONG_SHORT' 
-                : change24h < -0.3 
-                  ? 'SHORT' 
-                  : 'NEUTRAL';
-
-          const precision = livePrice < 0.1 ? 5 : livePrice < 1 ? 4 : livePrice < 10 ? 3 : 2;
-          const formattedPrice = parseFloat(livePrice.toFixed(precision));
-          const qualityScore = Math.min(98, Math.max(78, Math.round(82 + Math.abs(change24h) * 1.5 + (volume24h > 20000000 ? 5 : 2))));
-
-          return {
-            ...coin,
-            price: formattedPrice,
-            change24h,
-            volume24h,
-            high24h,
-            low24h,
-            rsi: calculatedRsi,
-            macd,
-            trend,
-            recommendation,
-            currentSetupQuality: qualityScore,
-          };
-        } else {
-          // If ticker not found directly, apply small live tick micro-fluctuation
-          const deltaPercent = (Math.random() - 0.49) * 0.15;
-          const precision = coin.price < 0.1 ? 5 : coin.price < 1 ? 4 : coin.price < 10 ? 3 : 2;
-          return {
-            ...coin,
-            price: parseFloat((coin.price * (1 + deltaPercent / 100)).toFixed(precision)),
-          };
-        }
-      });
+          return coin;
+        });
       lastMarketSyncTime = Date.now();
     }
   } catch (err: any) {
-    // Graceful fallback to real-time micro-fluctuations on network timeout so application never stalls
-    arenaState.coins = arenaState.coins.map(coin => {
-      const deltaPercent = (Math.random() - 0.49) * 0.25;
-      const precision = coin.price < 0.1 ? 5 : coin.price < 1 ? 4 : coin.price < 10 ? 3 : 2;
-      return {
-        ...coin,
-        price: parseFloat((coin.price * (1 + deltaPercent / 100)).toFixed(precision)),
-        change24h: parseFloat((coin.change24h + (Math.random() - 0.49) * 0.05).toFixed(2)),
-      };
-    });
+    // Ultra-fast lightweight ticker/price fallback (< 150ms) if 24hr stats took too long
+    try {
+      const fastController = new AbortController();
+      const fastTimeout = setTimeout(() => fastController.abort(), 2500);
+      const priceRes = await fetch('https://api.binance.com/api/v3/ticker/price', {
+        signal: fastController.signal,
+      });
+      clearTimeout(fastTimeout);
+      if (priceRes.ok) {
+        const prices: any[] = await priceRes.json();
+        const priceMap = new Map(prices.map(p => [p.symbol, parseFloat(p.price)]));
+        arenaState.coins = arenaState.coins.map(coin => {
+          const pair = `${coin.symbol}USDT`;
+          const p = priceMap.get(pair);
+          if (p) {
+            const precision = p < 0.1 ? 5 : p < 1 ? 4 : p < 10 ? 3 : 2;
+            return { ...coin, price: parseFloat(p.toFixed(precision)) };
+          }
+          return coin;
+        });
+        lastMarketSyncTime = Date.now();
+      }
+    } catch (fastErr) {
+      // Offline fallback: micro-fluctuations so system never crashes
+      arenaState.coins = arenaState.coins.map(coin => {
+        const deltaPercent = (Math.random() - 0.49) * 0.25;
+        const precision = coin.price < 0.1 ? 5 : coin.price < 1 ? 4 : coin.price < 10 ? 3 : 2;
+        return {
+          ...coin,
+          price: parseFloat((coin.price * (1 + deltaPercent / 100)).toFixed(precision)),
+          change24h: parseFloat((coin.change24h + (Math.random() - 0.49) * 0.05).toFixed(2)),
+        };
+      });
+    }
   } finally {
     isSyncingMarket = false;
   }

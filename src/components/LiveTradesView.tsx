@@ -13,9 +13,13 @@ import {
   DollarSign,
   Search,
   Sparkles,
-  Zap
+  Zap,
+  Copy,
+  Check,
+  FileCheck
 } from 'lucide-react';
 import { TradePosition } from '../types';
+import { getBlockExplorerUrl } from '../data/topCoins';
 
 interface LiveTradesViewProps {
   activeTrades: TradePosition[];
@@ -31,12 +35,21 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
   const [tab, setTab] = useState<'ACTIVE' | 'CLOSED'>('ACTIVE');
   const [searchQuery, setSearchQuery] = useState('');
   const [directionFilter, setDirectionFilter] = useState<'ALL' | 'LONG' | 'SHORT'>('ALL');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopy = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const filteredActive = activeTrades.filter(t => {
     const matchSearch = 
       t.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.botName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.botSerialNumber.toLowerCase().includes(searchQuery.toLowerCase());
+      t.botSerialNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.contractAddress && t.contractAddress.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchDirection = directionFilter === 'ALL' || t.direction === directionFilter;
     return matchSearch && matchDirection;
   });
@@ -229,6 +242,48 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
                           </div>
                         </div>
                       </div>
+
+                      {/* Verified Contract Address Verification Bar */}
+                      {trade.contractAddress && (
+                        <div className="flex items-center gap-2 text-[10px] text-slate-600 bg-slate-100/90 border border-slate-200 px-2.5 py-1.5 rounded-xl mb-2.5">
+                          <FileCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                          <span className="font-semibold text-slate-800">Verified Contract:</span>
+                          <span className="font-mono text-slate-600 truncate max-w-[180px] sm:max-w-[340px]">
+                            {trade.contractAddress}
+                          </span>
+                          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(trade.contractAddress!, trade.id)}
+                              className="px-1.5 py-0.5 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center gap-1 transition-colors font-medium text-[10px]"
+                              title="Copy Contract Address"
+                            >
+                              {copiedId === trade.id ? (
+                                <span className="text-[9px] text-emerald-700 font-bold flex items-center gap-0.5">
+                                  <Check className="w-3 h-3 text-emerald-600" /> Copied
+                                </span>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                            {trade.contractAddress.startsWith('0x') && (
+                              <a
+                                href={getBlockExplorerUrl(trade.network, trade.contractAddress)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-1.5 py-0.5 rounded hover:bg-slate-200 text-emerald-700 hover:text-emerald-800 flex items-center gap-0.5 transition-colors font-medium text-[10px]"
+                                title="View on Block Explorer"
+                              >
+                                <span>Explorer</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Price Grid */}
                       {(() => {
