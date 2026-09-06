@@ -56,6 +56,9 @@ export interface BotBrainMistakeLog {
   antiRepeatRuleAdded: string;
   confidenceScoreAtEntry: number;
   evolutionGeneration: number;
+  mistakeCategory?: string;
+  scopeOfAdaptation?: 'UNIVERSAL_ALL_COINS' | 'GLOBAL_STRATEGY';
+  affectedPairsScope?: string;
 }
 
 export interface AdaptedStrategyParameters {
@@ -74,6 +77,8 @@ export interface AdaptedStrategyParameters {
   tp2DistancePercent: number;
   runnerTrailingPercent: number;
   lastAdaptedReason: string;
+  universalPairsCount?: number;
+  universalScanningMistakeFilters?: boolean | string[];
 }
 
 export interface BotBrainIntelligence {
@@ -87,6 +92,8 @@ export interface BotBrainIntelligence {
   evolutionGeneration?: number;
   adaptedParameters?: AdaptedStrategyParameters;
   strategyEvolutionLog?: string[];
+  universalScanningMistakeFilters?: boolean | string[];
+  scanningDefenseCount?: number;
 }
 
 export interface BotEquityPoint {

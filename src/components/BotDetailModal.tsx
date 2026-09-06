@@ -18,7 +18,8 @@ import {
   Target,
   LineChart,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Globe
 } from 'lucide-react';
 import { ArenaBot, TradePosition } from '../types';
 
@@ -665,11 +666,22 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
             <div className="space-y-4">
               
               {/* Brain Summary Banner */}
-              <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 space-y-2">
-                <div className="flex items-center justify-between">
+              <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Brain className="w-5 h-5 text-purple-700" />
-                    <h3 className="text-sm font-bold text-purple-900">Self-Learning Neural Heuristics Engine</h3>
+                    <div>
+                      <h3 className="text-sm font-bold text-purple-900">Self-Learning Neural Heuristics Engine</h3>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          <Globe className="w-3 h-3 text-emerald-600" />
+                          Universal Adaptation: Active Across ALL 50 Universe Coins
+                        </span>
+                        <span className="text-[10px] font-mono text-purple-700 font-semibold">
+                          Gen {bot.aiBrain.evolutionGeneration || 1}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -684,21 +696,28 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                     </span>
                   </div>
                 </div>
-                <p className="text-xs text-purple-800">
-                  This bot automatically reviews past trade outcomes. When a trade incurs a loss, the AI Brain diagnoses the root cause, extracts preventative lessons, and establishes permanent anti-repeat rules to automatically adapt future entries.
+                <p className="text-xs text-purple-900 leading-relaxed">
+                  <strong>Global Fleet Learning Active:</strong> When a trade incurs a loss, this bot does not merely adapt for that single coin. It diagnoses the root cause, extracts technical preventative lessons, and universally recalibrates its confirmation gate, RVOL filters, and anti-repeat defenses across <strong>all 50 scanned pairs</strong> in the universe.
                 </p>
               </div>
 
-              {/* Active Anti-Repeat Rules */}
+              {/* Active Universal Anti-Repeat Rules */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                  Active Anti-Repeat Rules ({bot.aiBrain.antiRepeatRulesActive.length})
-                </h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Active Anti-Repeat Rules ({bot.aiBrain.antiRepeatRulesActive.length})
+                  </h4>
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    Shielding All 50 Pairs
+                  </span>
+                </div>
                 <div className="space-y-2">
                   {bot.aiBrain.antiRepeatRulesActive.map((ruleText, idx) => (
-                    <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 flex items-start gap-2">
+                    <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 flex items-start gap-2 hover:border-slate-300 transition-colors">
                       <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                      <span>{ruleText}</span>
+                      <div className="flex-1 min-w-0">
+                        <span>{ruleText}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -706,9 +725,14 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
 
               {/* Mistake Memory Logs */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                  Mistake Memory & Adaptation Logs ({bot.aiBrain.mistakeMemory.length})
-                </h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Advanced AI Mistake Memory & Universal Adaptations ({bot.aiBrain.mistakeMemory.length})
+                  </h4>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    Updated in Real-Time
+                  </span>
+                </div>
 
                 {bot.aiBrain.mistakeMemory.length === 0 ? (
                   <div className="p-6 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500">
@@ -717,26 +741,47 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                 ) : (
                   <div className="space-y-3">
                     {bot.aiBrain.mistakeMemory.map((log) => (
-                      <div key={log.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
+                      <div key={log.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 hover:border-slate-300 transition-colors shadow-2xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-slate-900">{log.symbol}</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${log.direction === 'LONG' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {log.direction}
+                            </span>
                             <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-100 text-rose-700 font-mono font-bold">
                               -{log.lossPercent.toFixed(1)}% (-${log.lossAmountUsd.toFixed(2)})
                             </span>
+                            {log.mistakeCategory && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold">
+                                {log.mistakeCategory}
+                              </span>
+                            )}
                           </div>
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            {new Date(log.timestamp).toLocaleTimeString()}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                              🌐 Universal (All 50 Coins)
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {new Date(log.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-700">
-                          <strong className="text-rose-700">Root Cause:</strong> {log.rootCause}
+
+                        <div className="text-xs text-slate-800 bg-white p-2.5 rounded-lg border border-slate-100 space-y-1.5">
+                          <div>
+                            <strong className="text-rose-700">Root Cause Diagnosis:</strong> {log.rootCause}
+                          </div>
+                          <div>
+                            <strong className="text-amber-800">Preventative Technical Lesson:</strong> {log.preventativeLesson}
+                          </div>
                         </div>
-                        <div className="text-xs text-slate-700">
-                          <strong className="text-amber-800">Preventative Lesson:</strong> {log.preventativeLesson}
-                        </div>
-                        <div className="text-xs text-slate-700">
-                          <strong className="text-emerald-700">Adaptation Applied:</strong> {log.adaptationApplied}
+
+                        <div className="text-xs p-2.5 rounded-lg bg-emerald-50/80 border border-emerald-200 text-emerald-950 font-medium">
+                          <strong className="text-emerald-800 flex items-center gap-1 mb-1">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                            Global Strategy Adaptation (Applied across ALL 50 Scanned Universe Pairs):
+                          </strong>
+                          <span>{log.adaptationApplied}</span>
                         </div>
                       </div>
                     ))}
@@ -762,6 +807,60 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                 <p className="text-slate-700 leading-relaxed font-normal">
                   {bot.strategyDescription}
                 </p>
+              </div>
+
+              {/* Universal Parameters Matrix (Active on ALL 50 Coins) */}
+              <div className="p-4 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-emerald-600" />
+                    Universal Parameter Matrix (Active across ALL 50 Scanned Universe Pairs)
+                  </h4>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Fleet-Wide Calibration
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Min Conviction Floor</div>
+                    <div className="text-sm font-extrabold text-slate-900 font-mono mt-0.5">
+                      {bot.aiBrain.adaptedParameters?.minConfidenceScore || 90}%
+                    </div>
+                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">All 50 Coins</div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Universal RVOL Gate</div>
+                    <div className="text-sm font-extrabold text-slate-900 font-mono mt-0.5">
+                      ≥{bot.aiBrain.adaptedParameters?.minRvol || 1.5}x
+                    </div>
+                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">Surge Required</div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Long RSI Corridor</div>
+                    <div className="text-sm font-extrabold text-slate-900 font-mono mt-0.5">
+                      {bot.aiBrain.adaptedParameters?.rsiMinLong || 44} - {bot.aiBrain.adaptedParameters?.rsiMaxLong || 66}
+                    </div>
+                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">Dynamic Bounds</div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Short RSI Corridor</div>
+                    <div className="text-sm font-extrabold text-slate-900 font-mono mt-0.5">
+                      {bot.aiBrain.adaptedParameters?.rsiMinShort || 34} - {bot.aiBrain.adaptedParameters?.rsiMaxShort || 56}
+                    </div>
+                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">Dynamic Bounds</div>
+                  </div>
+                </div>
+
+                {bot.aiBrain.adaptedParameters?.lastAdaptedReason && (
+                  <div className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200">
+                    <strong className="text-slate-800">Latest Fleet-Wide Adaptation: </strong>
+                    {bot.aiBrain.adaptedParameters.lastAdaptedReason}
+                  </div>
+                )}
               </div>
 
               {/* Dynamic TP & Risk Rules */}
@@ -802,7 +901,7 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                 <div className="space-y-2">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                     <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
-                    Auto-Adapted Strategy Evolution Log
+                    Universal Strategy Evolution Log (Across All Scanned Pairs)
                   </h4>
                   <div className="space-y-1.5">
                     {bot.aiBrain.strategyEvolutionLog.map((logItem, idx) => (

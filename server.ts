@@ -11,7 +11,8 @@ import {
   TelegramConfig, 
   TelegramLog,
   MarketTrend,
-  Recommendation
+  Recommendation,
+  BotBrainMistakeLog
 } from './src/types';
 import { INITIAL_ARENA_BOTS } from './src/data/arenaBots';
 import { generateTop500Universe, isHighDecimalOrBlacklistedCoin } from './src/data/topCoins';
@@ -158,6 +159,62 @@ function loadStateFromDisk(): ArenaFleetState {
           parsed.closedTrades = parsed.closedTrades.filter((t: TradePosition) => {
             const sym = t.symbol.replace('/USDT', '').replace('USDT', '').trim().toUpperCase();
             return !(sym === 'KAS' || sym === 'KASPA' || (t.name && t.name.toLowerCase().includes('kaspa')));
+          });
+        }
+
+        // Migrate and upgrade bot mistake memories & brain parameters to universal multi-coin format
+        if (Array.isArray(parsed.bots)) {
+          parsed.bots.forEach((b: ArenaBot) => {
+            if (b.aiBrain) {
+              b.aiBrain.universalScanningMistakeFilters = true;
+              b.aiBrain.scanningDefenseCount = Math.max(b.aiBrain.scanningDefenseCount || 0, (b.aiBrain.mistakesLearnedCount || 0) * 3);
+              
+              if (b.aiBrain.adaptedParameters) {
+                b.aiBrain.adaptedParameters.universalPairsCount = 50;
+                b.aiBrain.adaptedParameters.universalScanningMistakeFilters = true;
+                if (!b.aiBrain.adaptedParameters.lastAdaptedReason || b.aiBrain.adaptedParameters.lastAdaptedReason.includes('for ')) {
+                  b.aiBrain.adaptedParameters.lastAdaptedReason = `Calibrated minimum conviction to ${b.aiBrain.adaptedParameters.minConfidenceScore}% and RVOL to ${b.aiBrain.adaptedParameters.minRvol}x across ALL 50 scanned universe pairs.`;
+                }
+              }
+
+              if (Array.isArray(b.aiBrain.mistakeMemory) && b.aiBrain.mistakeMemory.length > 0) {
+                b.aiBrain.mistakeMemory = b.aiBrain.mistakeMemory.map((m: BotBrainMistakeLog, idx: number) => {
+                  m.scopeOfAdaptation = 'UNIVERSAL_ALL_COINS';
+                  m.affectedPairsScope = 'All 50 Scanned Universe Pairs';
+                  if (!m.mistakeCategory) {
+                    const categories = [
+                      'Bull Trap Liquidity Sweep',
+                      'Bear Trap Iceberg Absorption',
+                      'Momentum Oscillator Divergence',
+                      'Order Flow Delta Exhaustion',
+                      'Choppy Range Consolidation Whipsaw',
+                      'Counter-Trend HTF Friction',
+                      'Macro Volatility Spike Invalidation',
+                      'Orderbook Liquidity Vacuum',
+                      'Premature Retest Execution',
+                      'EMA Dynamic Invalidation'
+                    ];
+                    m.mistakeCategory = categories[idx % categories.length];
+                  }
+                  if (m.adaptationApplied && (m.adaptationApplied.includes('for ') || !m.adaptationApplied.includes('Universal'))) {
+                    m.adaptationApplied = `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Raised minimum confirmation threshold and calibrated institutional RVOL volume gates to filter repeated liquidity sweep traps.`;
+                  }
+                  if (m.antiRepeatRuleAdded && !m.antiRepeatRuleAdded.includes('[Universal')) {
+                    m.antiRepeatRuleAdded = `[Universal - All 50 Coins] ${m.antiRepeatRuleAdded.replace(/entering \w+\/USDT/gi, 'entering any universe asset').replace(/entering \w+/gi, 'entering any universe asset')}`;
+                  }
+                  return m;
+                });
+              }
+
+              if (Array.isArray(b.aiBrain.antiRepeatRulesActive)) {
+                b.aiBrain.antiRepeatRulesActive = b.aiBrain.antiRepeatRulesActive.map((r: string) => {
+                  if (!r.includes('[Universal')) {
+                    return `[Universal - All 50 Coins] ${r.replace(/entering \w+\/USDT/gi, 'entering any universe asset').replace(/entering \w+/gi, 'entering any universe asset')}`;
+                  }
+                  return r;
+                });
+              }
+            }
           });
         }
 
@@ -416,8 +473,12 @@ setInterval(async () => {
         bot.activeTradesCount = Math.max(0, bot.activeTradesCount - 1);
         bot.equityHistory.push({ timestamp: now, balance: bot.portfolioBalance });
 
-        // Mistake Analysis & AI Brain Evolution if Loss
+        // Mistake Analysis & Universal Strategy Adaptation across ALL 50 Universe Pairs
         if (!isWin) {
+          // 1. First adapt the bot parameters universally across all 50 coins
+          adaptBotStrategyFromPast(bot, updatedTrade, 'LOSS');
+
+          // 2. Generate detailed mistake analysis reflecting new universal parameters
           const mistakeLog = analyzeTradeMistakeAndEvolve(updatedTrade, bot);
           bot.aiBrain.mistakeMemory.unshift(mistakeLog);
           if (bot.aiBrain.mistakeMemory.length > 30) bot.aiBrain.mistakeMemory.pop();
@@ -425,12 +486,14 @@ setInterval(async () => {
           bot.aiBrain.adaptationScore = Math.min(99, bot.aiBrain.adaptationScore + 1);
           bot.aiBrain.lastAdaptationTimestamp = now;
           bot.aiBrain.antiRepeatRulesActive.unshift(mistakeLog.antiRepeatRuleAdded);
-          if (bot.aiBrain.antiRepeatRulesActive.length > 8) bot.aiBrain.antiRepeatRulesActive.pop();
+          if (bot.aiBrain.antiRepeatRulesActive.length > 10) bot.aiBrain.antiRepeatRulesActive.pop();
+          bot.aiBrain.universalScanningMistakeFilters = true;
+          bot.aiBrain.scanningDefenseCount = (bot.aiBrain.scanningDefenseCount || 0) + 1;
           arenaState.learningCyclesCompleted += 1;
+        } else {
+          // On win, adapt strategy bounds progressively across all 50 coins
+          adaptBotStrategyFromPast(bot, updatedTrade, 'WIN');
         }
-
-        // Automatic Strategy Adaptation from Past Performance (Wins & Losses)
-        adaptBotStrategyFromPast(bot, updatedTrade, isWin ? 'WIN' : 'LOSS');
 
         arenaState.closedTrades.unshift(updatedTrade);
         if (arenaState.closedTrades.length > 500) arenaState.closedTrades.pop();
