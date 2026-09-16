@@ -764,7 +764,7 @@ app.post('/api/arena/reset', (req, res) => {
 // Bot Management: Active / Pause toggle
 app.post('/api/arena/bot/toggle-status', (req, res) => {
   const { botId } = req.body;
-  const bot = arenaState.bots.find(b => b.id === botId);
+  const bot = arenaState.bots.find(b => b.id === botId || b.serialNumber.toLowerCase() === (botId || '').toLowerCase());
   if (!bot) {
     return res.status(404).json({ status: 'error', message: 'Bot not found' });
   }
@@ -774,7 +774,7 @@ app.post('/api/arena/bot/toggle-status', (req, res) => {
 
   res.json({
     status: 'ok',
-    message: `Bot ${bot.name} is now ${bot.status}.`,
+    message: `Bot ${bot.name} (${bot.serialNumber}) is now ${bot.status}.`,
     data: arenaState,
   });
 });
@@ -782,7 +782,7 @@ app.post('/api/arena/bot/toggle-status', (req, res) => {
 // Bot Management: Delete Bot
 app.post('/api/arena/bot/delete', (req, res) => {
   const { botId } = req.body;
-  const index = arenaState.bots.findIndex(b => b.id === botId);
+  const index = arenaState.bots.findIndex(b => b.id === botId || b.serialNumber.toLowerCase() === (botId || '').toLowerCase());
   if (index === -1) {
     return res.status(404).json({ status: 'error', message: 'Bot not found' });
   }
@@ -790,7 +790,7 @@ app.post('/api/arena/bot/delete', (req, res) => {
   const deletedBot = arenaState.bots[index];
   arenaState.bots.splice(index, 1);
   // Remove any active trades for this bot
-  arenaState.activeTrades = arenaState.activeTrades.filter(t => t.botId !== botId);
+  arenaState.activeTrades = arenaState.activeTrades.filter(t => t.botId !== deletedBot.id && t.botSerialNumber !== deletedBot.serialNumber);
 
   const totalInit = arenaState.bots.reduce((sum, b) => sum + (b.initialBalance || 100.00), 0);
   let totalBal = 0;

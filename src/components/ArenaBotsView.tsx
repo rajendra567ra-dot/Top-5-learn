@@ -51,6 +51,9 @@ export const ArenaBotsView: React.FC<ArenaBotsViewProps> = ({
   const [parentAId, setParentAId] = useState('');
   const [parentBId, setParentBId] = useState('');
 
+  // In-app Delete Confirmation Modal State (replaces blocked window.confirm)
+  const [botToDelete, setBotToDelete] = useState<ArenaBot | null>(null);
+
   const categories: { label: string; value: string }[] = [
     { label: `All ${bots.length} Bots`, value: 'ALL' },
     { label: 'Trend Following', value: 'TREND' },
@@ -252,42 +255,54 @@ export const ArenaBotsView: React.FC<ArenaBotsViewProps> = ({
                   </div>
 
                   {/* Top Right Actions & Badges */}
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     {/* Active / Pause Toggle Button */}
-                    <button
-                      type="button"
-                      title={bot.status === 'PAUSED' ? 'Resume Bot' : 'Pause Bot'}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleBotStatus?.(bot.id);
-                      }}
-                      className={`p-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                        bot.status === 'PAUSED'
-                          ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
-                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200'
-                      }`}
-                    >
-                      {bot.status === 'PAUSED' ? (
-                        <Play className="w-3.5 h-3.5 fill-current text-amber-700" />
-                      ) : (
-                        <Pause className="w-3.5 h-3.5 fill-current text-slate-600" />
-                      )}
-                    </button>
+                    {onToggleBotStatus && (
+                      <button
+                        type="button"
+                        id={`toggle-bot-btn-${bot.id}`}
+                        title={bot.status === 'PAUSED' ? 'Resume Bot Execution' : 'Pause Bot Execution'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          onToggleBotStatus(bot.id);
+                        }}
+                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all border flex items-center gap-1 min-h-[32px] cursor-pointer shadow-2xs ${
+                          bot.status === 'PAUSED'
+                            ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                            : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300'
+                        }`}
+                      >
+                        {bot.status === 'PAUSED' ? (
+                          <>
+                            <Play className="w-3.5 h-3.5 fill-current text-amber-700" />
+                            <span className="text-[11px]">Resume</span>
+                          </>
+                        ) : (
+                          <>
+                            <Pause className="w-3.5 h-3.5 fill-current text-slate-600" />
+                            <span className="text-[11px]">Pause</span>
+                          </>
+                        )}
+                      </button>
+                    )}
 
                     {/* Delete Bot Button */}
-                    <button
-                      type="button"
-                      title="Delete Bot"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm(`Are you sure you want to delete ${bot.serialNumber} (${bot.name})?`)) {
-                          onDeleteBot?.(bot.id);
-                        }
-                      }}
-                      className="p-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500 border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {onDeleteBot && (
+                      <button
+                        type="button"
+                        id={`delete-bot-btn-${bot.id}`}
+                        title={`Delete ${bot.serialNumber} (${bot.name})`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setBotToDelete(bot);
+                        }}
+                        className="p-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500 border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-300 transition-all min-h-[32px] min-w-[32px] flex items-center justify-center cursor-pointer shadow-2xs"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -568,6 +583,77 @@ export const ArenaBotsView: React.FC<ArenaBotsViewProps> = ({
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Deploy Combination Bot ($100 Balance)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Delete Bot Confirmation (In-App, No window.confirm) */}
+      {botToDelete && (
+        <div 
+          id="delete-bot-modal-backdrop"
+          onClick={() => setBotToDelete(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+        >
+          <div 
+            id="delete-bot-modal-card"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-slate-900"
+          >
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-slate-900">
+                  Delete {botToDelete.serialNumber}?
+                </h3>
+                <p className="text-xs font-medium text-slate-600 mt-0.5">
+                  {botToDelete.name} • {botToDelete.strategyCategory.replace('_', ' ')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBotToDelete(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-rose-50/70 border border-rose-200 text-xs text-rose-900 space-y-1.5">
+              <p className="font-semibold">⚠️ Are you sure you want to delete this trading bot?</p>
+              <p className="text-[11px] text-rose-700">
+                • Current Portfolio Balance: <strong>${botToDelete.portfolioBalance.toFixed(2)}</strong> ({botToDelete.totalPnL >= 0 ? '+' : ''}${botToDelete.totalPnL.toFixed(2)})
+              </p>
+              <p className="text-[11px] text-rose-700">
+                • Any active trades for {botToDelete.serialNumber} will be immediately closed and cancelled.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                id="cancel-delete-bot-btn"
+                onClick={() => setBotToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors border border-slate-200 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="confirm-delete-bot-btn"
+                onClick={() => {
+                  if (botToDelete && onDeleteBot) {
+                    onDeleteBot(botToDelete.id);
+                    setBotToDelete(null);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Confirm Delete Bot</span>
               </button>
             </div>
           </div>

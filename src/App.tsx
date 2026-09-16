@@ -152,6 +152,10 @@ export const App: React.FC = () => {
       if (res.ok) {
         const json = await res.json();
         setState(json.data);
+        if (selectedBotIdRef.current === botId && json.data.bots) {
+          const updated = json.data.bots.find((b: any) => b.id === botId);
+          if (updated) setSelectedBot(updated);
+        }
         showToast(json.message);
       }
     } catch (err) {
@@ -170,6 +174,10 @@ export const App: React.FC = () => {
       if (res.ok) {
         const json = await res.json();
         setState(json.data);
+        if (selectedBotIdRef.current === botId) {
+          selectedBotIdRef.current = null;
+          setSelectedBot(null);
+        }
         showToast(json.message);
       }
     } catch (err) {
@@ -344,6 +352,8 @@ export const App: React.FC = () => {
         closedTrades={state.closedTrades}
         onClose={() => handleSelectBot(null)}
         onReturnHome={handleReturnHome}
+        onToggleBotStatus={handleToggleBotStatus}
+        onDeleteBot={handleDeleteBot}
       />
 
       <ResetConfirmModal
