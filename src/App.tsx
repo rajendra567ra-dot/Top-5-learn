@@ -227,12 +227,16 @@ export const App: React.FC = () => {
   const handleTriggerHourly = async () => {
     try {
       const res = await fetch('/api/arena/telegram/hourly-trigger', { method: 'POST' });
-      if (res.ok) {
-        showToast('Hourly Top 10 Bots Summary dispatched to Telegram.');
-        fetchState();
+      const json = await res.json();
+      if (res.ok && json.status === 'ok') {
+        showToast(json.message || 'Hourly 1-Hour Report successfully delivered to Telegram!');
+      } else {
+        showToast(json.message || 'Telegram delivery failed. Please check your credentials.');
       }
-    } catch (err) {
+      fetchState();
+    } catch (err: any) {
       console.error(err);
+      showToast('Network error triggering hourly report.');
     }
   };
 
@@ -240,12 +244,16 @@ export const App: React.FC = () => {
   const handleSendTest = async () => {
     try {
       const res = await fetch('/api/arena/telegram/test', { method: 'POST' });
-      if (res.ok) {
-        showToast('Test ping sent to Telegram relay.');
-        fetchState();
+      const json = await res.json();
+      if (res.ok && json.status === 'ok') {
+        showToast(json.message || 'Test ping delivered to Telegram!');
+      } else {
+        showToast(json.message || 'Telegram test failed. Please check Bot Token & Chat ID.');
       }
-    } catch (err) {
+      fetchState();
+    } catch (err: any) {
       console.error(err);
+      showToast('Network error sending test ping.');
     }
   };
 

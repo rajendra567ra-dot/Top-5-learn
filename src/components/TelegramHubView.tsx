@@ -32,13 +32,26 @@ export const TelegramHubView: React.FC<TelegramHubViewProps> = ({
   const [chatId, setChatId] = useState(telegramConfig.chatId || '');
   const [enabled, setEnabled] = useState(telegramConfig.enabled || false);
 
-  const [notifyOnTradeOpen, setNotifyOnTradeOpen] = useState(telegramConfig.notifyOnTradeOpen ?? true);
-  const [notifyOnTP1, setNotifyOnTP1] = useState(telegramConfig.notifyOnTP1 ?? true);
-  const [notifyOnTP2, setNotifyOnTP2] = useState(telegramConfig.notifyOnTP2 ?? true);
-  const [notifyOnStopLoss, setNotifyOnStopLoss] = useState(telegramConfig.notifyOnStopLoss ?? true);
+  const [notifyOnTradeOpen, setNotifyOnTradeOpen] = useState(telegramConfig.notifyOnTradeOpen ?? false);
+  const [notifyOnTP1, setNotifyOnTP1] = useState(telegramConfig.notifyOnTP1 ?? false);
+  const [notifyOnTP2, setNotifyOnTP2] = useState(telegramConfig.notifyOnTP2 ?? false);
+  const [notifyOnStopLoss, setNotifyOnStopLoss] = useState(telegramConfig.notifyOnStopLoss ?? false);
   const [notifyHourlySummary, setNotifyHourlySummary] = useState(telegramConfig.notifyHourlySummary ?? true);
 
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Sync inputs if remote config changes and user hasn't typed different credentials
+  React.useEffect(() => {
+    if (telegramConfig.botToken && !botToken) {
+      setBotToken(telegramConfig.botToken);
+    }
+    if (telegramConfig.chatId && !chatId) {
+      setChatId(telegramConfig.chatId);
+    }
+    if (telegramConfig.enabled !== undefined) {
+      setEnabled(telegramConfig.enabled);
+    }
+  }, [telegramConfig.botToken, telegramConfig.chatId, telegramConfig.enabled]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,10 +125,24 @@ export const TelegramHubView: React.FC<TelegramHubViewProps> = ({
               <Settings className="w-4 h-4 text-emerald-600" />
               Telegram Bot API Credentials
             </h3>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${enabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}`}>
-              {enabled ? 'Dispatches Enabled' : 'Simulated In-App Log Mode'}
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${enabled && botToken && chatId ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}`}>
+              {enabled && botToken && chatId ? 'Dispatches Active' : 'Enter Credentials Below'}
             </span>
           </div>
+
+          {/* Current Live Delivery Status Banner */}
+          {telegramConfig.lastStatus && (
+            <div className={`p-3 rounded-xl text-xs font-mono flex items-center gap-2 border ${
+              telegramConfig.lastStatus.includes('Delivered') || telegramConfig.lastStatus.includes('SENT')
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : telegramConfig.lastStatus.includes('Failed') || telegramConfig.lastStatus.includes('Error')
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : 'bg-slate-50 border-slate-200 text-slate-700'
+            }`}>
+              <span className="font-bold">Last Status:</span>
+              <span className="truncate">{telegramConfig.lastStatus}</span>
+            </div>
+          )}
 
           <form onSubmit={handleSave} className="space-y-4 text-xs">
             <div>
@@ -224,14 +251,14 @@ export const TelegramHubView: React.FC<TelegramHubViewProps> = ({
               <div>💰 Total Arena Capital: <strong>${state.totalArenaBalance.toFixed(2)}</strong> ({state.totalArenaPnL >= 0 ? '+' : ''}${state.totalArenaPnL.toFixed(2)})</div>
               <div>🏆 Arena Win Rate: <strong>{state.arenaWinRate}%</strong> ({state.totalArenaWins}W / {state.totalArenaLosses}L)</div>
               <div>⚡️ Active Running Trades: <strong>{state.activeTrades.length} / 200 Max</strong></div>
-              <div>🛡 Multi-Tier Rules: <strong>35% TP1 (BE) → 25% TP2 (Lock TP1) → 40% Runner</strong></div>
+              <div>🛡 Strict Rules: <strong>50% TP1 (SL to BE) → 50% TP2 (Full Close, No Runner)</strong></div>
               <div className="pt-1 font-bold text-slate-900">🏅 TOP 10 RANKED BOT FLEET:</div>
               {top10Bots.map((b, idx) => (
                 <div key={b.id} className="text-slate-700">
                   {idx + 1}. <strong>{b.serialNumber} ({b.name})</strong> — ${b.portfolioBalance.toFixed(2)} | {b.winRate}% WR | Gen {b.aiBrain.evolutionGeneration || 1}
                 </div>
               ))}
-              <div className="pt-1 text-slate-500">🤖 40 Bots Active • CMC 500 Market Scanner Engine</div>
+              <div className="pt-1 text-slate-500">🤖 40 Bots Active • 300+ Verified Market Universe Scanner Engine</div>
             </div>
           </div>
 

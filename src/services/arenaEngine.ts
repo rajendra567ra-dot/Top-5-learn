@@ -480,13 +480,11 @@ export function calculateTradeParameters(
   };
 
   // Distance x from entry price to initial stop loss
-  // If entry price to sl distance is x:
-  // - Entry price to TP1 distance is 0.8x
-  // - Entry price to TP2 distance is 1.2x
-  // Example: entry price 100 & SL 90 (x = 10) -> TP1 108 (0.8*10 = 8) & TP2 112 (1.2*10 = 12)
+  // User mandate: "tp1 equals to sl and tp2 is double of tp1"
+  // Example: entry price 100 & SL 90 (x = 10) -> TP1 110 (10) & TP2 120 (2*10 = 20)
   const x = parseFloat((entryPrice * slDistancePercent).toFixed(dec));
-  const tp1Dist = parseFloat((0.8 * x).toFixed(dec));
-  const tp2Dist = parseFloat((1.2 * x).toFixed(dec));
+  const tp1Dist = x;
+  const tp2Dist = parseFloat((2 * x).toFixed(dec));
   
   let initialStopLossPrice: number;
   let tp1Price: number;
@@ -654,80 +652,80 @@ export function analyzeTradeMistakeAndEvolve(trade: TradePosition, bot: ArenaBot
       directions: ['LONG'],
       rootCause: `Macro market liquidity sweep engineered a fake breakout above swing resistance on ${trade.symbol}, trapping early long momentum before aggressive limit selling triggered sharp reversal.`,
       preventativeLesson: `Enforce mandatory 5M candle body displacement close beyond swing pivot and require 4H macro EMA 50 trend alignment before authorizing breakout execution on any asset.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Raised entry conviction gate to ${newMinConf}%, upgraded universal RVOL filter to ${newRvol}x, and activated global fakeout displacement guardrails.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Prohibit long breakout entries across all pairs when 5M candle fails body displacement beyond local resistance.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Raised entry conviction gate to ${newMinConf}%, upgraded universal RVOL filter to ${newRvol}x, and activated global fakeout displacement guardrails.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Prohibit long breakout entries across all pairs when 5M candle fails body displacement beyond local resistance.`,
     },
     {
       category: 'Bear Trap Iceberg Absorption',
       directions: ['SHORT'],
       rootCause: `Breakdown momentum below horizontal support on ${trade.symbol} was absorbed by hidden passive institutional bid icebergs at 4H demand block, fueling an aggressive short squeeze.`,
       preventativeLesson: `Require confirmed breakdown retest with consecutive 5M seller volume delta expansion before validating short continuation on any asset.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Raised short conviction threshold to ${newMinConf}% and calibrated universal CVD taker delta requirement across all 50 universe pairs.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Disallow short execution across all pairs into resting 4H demand order blocks without confirmed retest follow-through.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Raised short conviction threshold to ${newMinConf}% and calibrated universal CVD taker delta requirement across all 300+ universe pairs.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Disallow short execution across all pairs into resting 4H demand order blocks without confirmed retest follow-through.`,
     },
     {
       category: 'Momentum Oscillator Divergence',
       directions: ['LONG', 'SHORT'],
       rootCause: `${trade.direction === 'LONG' ? 'Bearish' : 'Bullish'} RSI and MACD histogram divergence formed at local extremum while taker volume was drying up on ${trade.symbol}, triggering swift mean-reversion stop hit.`,
       preventativeLesson: `Implement strict multi-timeframe divergence filter: veto ${trade.direction} entries across all pairs when 15M RSI and MACD histogram slopes oppose price trajectory.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Recalibrated universal indicator corridor, raised minimum confirmation to ${newMinConf}%, and mandated dual-oscillator divergence validation.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Strict prohibition on entries across all universe assets when 15M RSI and MACD display counter-trend divergence.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Recalibrated universal indicator corridor, raised minimum confirmation to ${newMinConf}%, and mandated dual-oscillator divergence validation.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Strict prohibition on entries across all universe assets when 15M RSI and MACD display counter-trend divergence.`,
     },
     {
       category: 'Order Flow Delta Exhaustion',
       directions: ['LONG', 'SHORT'],
       rootCause: `Aggressive taker delta faded at key structural pivot on ${trade.symbol}, leaving orderbook depth vulnerable to an opposing institutional market order cascade.`,
       preventativeLesson: `Require positive cumulative volume delta (CVD) expansion slope on 5M timeframe to verify sustained institutional participation.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Raised universal RVOL volume filter to ${newRvol}x and mandated taker delta confirmation across all 50 scanned assets.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Deny trade execution on all universe coins when 5M cumulative volume delta is declining during the entry bar.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Raised universal RVOL volume filter to ${newRvol}x and mandated taker delta confirmation across all 300+ scanned assets.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Deny trade execution on all universe coins when 5M cumulative volume delta is declining during the entry bar.`,
     },
     {
       category: 'Choppy Range Consolidation Whipsaw',
       directions: ['LONG', 'SHORT'],
       rootCause: `Market regime compressed inside a tight 15M Bollinger squeeze on ${trade.symbol} with inadequate expansion momentum, triggering premature stop loss before directional resolution.`,
       preventativeLesson: `Filter out sideways market regimes: mandate minimum 2.0% 24h expansion trend or clean higher-timeframe directional impulse before trade entry.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Activated universal range chop filter, requiring ADX trend strength > 25 and minimum setup quality ≥ 85% for all coins.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Automatic trade veto across all pairs when 15M volatility bandwidth is compressed inside consolidation chop.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Activated universal range chop filter, requiring ADX trend strength > 25 and minimum setup quality ≥ 85% for all coins.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Automatic trade veto across all pairs when 15M volatility bandwidth is compressed inside consolidation chop.`,
     },
     {
       category: 'Counter-Trend HTF Friction',
       directions: ['LONG', 'SHORT'],
       rootCause: `Lower timeframe 5M/15M setup on ${trade.symbol} attempted execution directly into dominant 4H/1D macro EMA ${trade.direction === 'LONG' ? 'resistance' : 'support'}, creating insurmountable overhead supply.`,
       preventativeLesson: `Mandate full multi-timeframe alignment across 4H, 1H, and 15M charts; strictly disallow counter-trend entries against prevailing macro moving averages.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Enforced 4H/1H macro trend alignment gate across all 50 coins and raised minimum confirmation rules to 9/10.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Prohibit trade entries across all universe coins that oppose the prevailing 4H macro trend direction.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Enforced 4H/1H macro trend alignment gate across all 300+ coins and raised minimum confirmation rules to 9/10.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Prohibit trade entries across all universe coins that oppose the prevailing 4H macro trend direction.`,
     },
     {
       category: 'Macro Volatility Spike Invalidation',
       directions: ['LONG', 'SHORT'],
       rootCause: `Broad crypto market volatility expansion triggered sudden spread widening and a liquidity wick on ${trade.symbol} that breached stop loss prior to structure stabilization.`,
       preventativeLesson: `Dynamically calibrate stop loss using wider structural ATR buffer and wait for post-spike re-stabilization 5M candle body close.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Adjusted dynamic ATR volatility corridor and tightened pre-entry volatility filters across entire universe.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Pause new entries across all coins during rapid market-wide volatility spikes until 15M candle stabilization.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Adjusted dynamic ATR volatility corridor and tightened pre-entry volatility filters across entire universe.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Pause new entries across all coins during rapid market-wide volatility spikes until 15M candle stabilization.`,
     },
     {
       category: 'Premature Retest Execution',
       directions: ['LONG', 'SHORT'],
       rootCause: `Bot executed on the initial touch of support/resistance zone on ${trade.symbol} before validating absorption and confirming a decisive reversal candle body close.`,
       preventativeLesson: `Require secondary retest verification with confirmed rejection wick and displacement close before authorizing entry on structural pivots.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Updated universal entry timing algorithms across all 50 pairs, adding secondary retest validation.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Prohibit entries across all pairs on unconfirmed initial touches of key support/resistance zones.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Updated universal entry timing algorithms across all 300+ pairs, adding secondary retest validation.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Prohibit entries across all pairs on unconfirmed initial touches of key support/resistance zones.`,
     },
     {
       category: 'Orderbook Liquidity Vacuum',
       directions: ['LONG', 'SHORT'],
       rootCause: `Sudden liquidity depletion on the ${trade.direction === 'LONG' ? 'bid' : 'ask'} depth chart caused rapid slippage on ${trade.symbol}, triggering stop loss before normal orderbook replenishing.`,
       preventativeLesson: `Implement institutional minimum depth requirement: ensure top-5 bid/ask depth exceeds $150k before qualifying trade execution on any token.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Enforced institutional orderbook depth threshold and raised minimum 24h volume threshold across all pairs.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Restrict trade execution across all universe pairs during thin orderbook liquidity conditions.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Enforced institutional orderbook depth threshold and raised minimum 24h volume threshold across all pairs.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Restrict trade execution across all universe pairs during thin orderbook liquidity conditions.`,
     },
     {
       category: 'EMA Dynamic Invalidation',
       directions: ['LONG', 'SHORT'],
       rootCause: `Attempted dynamic trend entry on ${trade.symbol} failed as high-volume institutional selling sliced cleanly through the 20 EMA dynamic support.`,
       preventativeLesson: `Avoid aggressive trend additions without verified volume delta continuation; enforce secondary candle confirmation below EMA pivots.`,
-      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Tightened dynamic trend corridor boundaries and raised conviction requirement to ${newMinConf}%.`,
-      universalAntiRepeatRule: `[Universal - All 50 Coins] Invalidate dynamic trend continuation setups across all pairs if price closes below dynamic 20 EMA.`,
+      universalAdaptation: `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Tightened dynamic trend corridor boundaries and raised conviction requirement to ${newMinConf}%.`,
+      universalAntiRepeatRule: `[Universal - All 300+ Coins] Invalidate dynamic trend continuation setups across all pairs if price closes below dynamic 20 EMA.`,
     },
   ];
 
@@ -758,7 +756,7 @@ export function analyzeTradeMistakeAndEvolve(trade: TradePosition, bot: ArenaBot
     evolutionGeneration: nextGen,
     mistakeCategory: selected.category,
     scopeOfAdaptation: 'UNIVERSAL_ALL_COINS',
-    affectedPairsScope: 'All 50 Scanned Universe Pairs',
+    affectedPairsScope: 'All 300+ Scanned Universe Pairs',
   };
 }
 
@@ -797,7 +795,7 @@ export function formatHourlyTelegramSummary(state: ArenaFleetState): string {
     `🏆 <b>TOP 10 PERFORMING BOTS (HOURLY LEADERBOARD):</b>\n\n` +
     top10Text +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `🛡 <i>Strict Rules: 3% Dynamic Margin | Dynamic Leverage | Max Loss 1.5% | 35% TP1 (BE) → 25% TP2 (Lock TP1) → 40% Runner. Next report in 60 mins.</i>`;
+    `🛡 <i>Strict Rules: 5% Dynamic Margin | Dynamic Leverage | Max Loss 1.5% | 50% TP1 (SL moved to Entry) → 50% TP2 (Full Close). Next report in 60 mins.</i>`;
 }
 
 export function formatTradeTelegramMessage(

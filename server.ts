@@ -102,7 +102,7 @@ function loadStateFromDisk(): ArenaFleetState {
         const freshUniverse = generateTop500Universe();
         const freshMap = new Map(freshUniverse.map(c => [c.symbol, c]));
         
-        // Strict Universe: Replace coins with verified list, removing any blacklisted tokens like KAS
+        // Strict Universe: Replace coins with verified list (300+ coins), removing any blacklisted tokens like KAS
         parsed.coins = freshUniverse;
 
         // Enforce user mandate: Only send hourly report, never send every trade data
@@ -112,6 +112,13 @@ function loadStateFromDisk(): ArenaFleetState {
           parsed.telegramConfig.notifyOnTP2 = false;
           parsed.telegramConfig.notifyOnStopLoss = false;
           parsed.telegramConfig.notifyHourlySummary = true;
+          // Fallback to environment variables if present
+          if (!parsed.telegramConfig.botToken && process.env.TELEGRAM_BOT_TOKEN) {
+            parsed.telegramConfig.botToken = process.env.TELEGRAM_BOT_TOKEN.trim();
+          }
+          if (!parsed.telegramConfig.chatId && process.env.TELEGRAM_CHAT_ID) {
+            parsed.telegramConfig.chatId = process.env.TELEGRAM_CHAT_ID.trim();
+          }
         }
 
         // Filter out KAS (Kaspa) and any stale trades with outdated prices
@@ -171,17 +178,17 @@ function loadStateFromDisk(): ArenaFleetState {
               b.aiBrain.scanningDefenseCount = Math.max(b.aiBrain.scanningDefenseCount || 0, (b.aiBrain.mistakesLearnedCount || 0) * 3);
               
               if (b.aiBrain.adaptedParameters) {
-                b.aiBrain.adaptedParameters.universalPairsCount = 50;
+                b.aiBrain.adaptedParameters.universalPairsCount = 300;
                 b.aiBrain.adaptedParameters.universalScanningMistakeFilters = true;
-                if (!b.aiBrain.adaptedParameters.lastAdaptedReason || b.aiBrain.adaptedParameters.lastAdaptedReason.includes('for ')) {
-                  b.aiBrain.adaptedParameters.lastAdaptedReason = `Calibrated minimum conviction to ${b.aiBrain.adaptedParameters.minConfidenceScore}% and RVOL to ${b.aiBrain.adaptedParameters.minRvol}x across ALL 50 scanned universe pairs.`;
+                if (!b.aiBrain.adaptedParameters.lastAdaptedReason || b.aiBrain.adaptedParameters.lastAdaptedReason.includes('for ') || b.aiBrain.adaptedParameters.lastAdaptedReason.includes('50')) {
+                  b.aiBrain.adaptedParameters.lastAdaptedReason = `Calibrated minimum conviction to ${b.aiBrain.adaptedParameters.minConfidenceScore}% and RVOL to ${b.aiBrain.adaptedParameters.minRvol}x across ALL 300+ verified universe pairs.`;
                 }
               }
 
               if (Array.isArray(b.aiBrain.mistakeMemory) && b.aiBrain.mistakeMemory.length > 0) {
                 b.aiBrain.mistakeMemory = b.aiBrain.mistakeMemory.map((m: BotBrainMistakeLog, idx: number) => {
                   m.scopeOfAdaptation = 'UNIVERSAL_ALL_COINS';
-                  m.affectedPairsScope = 'All 50 Scanned Universe Pairs';
+                  m.affectedPairsScope = 'All 300+ Scanned Universe Pairs';
                   if (!m.mistakeCategory) {
                     const categories = [
                       'Bull Trap Liquidity Sweep',
@@ -197,11 +204,11 @@ function loadStateFromDisk(): ArenaFleetState {
                     ];
                     m.mistakeCategory = categories[idx % categories.length];
                   }
-                  if (m.adaptationApplied && (m.adaptationApplied.includes('for ') || !m.adaptationApplied.includes('Universal'))) {
-                    m.adaptationApplied = `🌐 Universal Strategy Upgrade across ALL 50 Scanned Universe Pairs: Raised minimum confirmation threshold and calibrated institutional RVOL volume gates to filter repeated liquidity sweep traps.`;
+                  if (m.adaptationApplied && (m.adaptationApplied.includes('for ') || m.adaptationApplied.includes('50') || !m.adaptationApplied.includes('Universal'))) {
+                    m.adaptationApplied = `🌐 Universal Strategy Upgrade across ALL 300+ Scanned Universe Pairs: Raised minimum confirmation threshold and calibrated institutional RVOL volume gates to filter repeated liquidity sweep traps.`;
                   }
-                  if (m.antiRepeatRuleAdded && !m.antiRepeatRuleAdded.includes('[Universal')) {
-                    m.antiRepeatRuleAdded = `[Universal - All 50 Coins] ${m.antiRepeatRuleAdded.replace(/entering \w+\/USDT/gi, 'entering any universe asset').replace(/entering \w+/gi, 'entering any universe asset')}`;
+                  if (m.antiRepeatRuleAdded && !m.antiRepeatRuleAdded.includes('[Universal - All 300+')) {
+                    m.antiRepeatRuleAdded = `[Universal - All 300+ Coins] ${m.antiRepeatRuleAdded.replace(/\[Universal - All \d+ Coins\]\s*/g, '').replace(/entering \w+\/USDT/gi, 'entering any universe asset').replace(/entering \w+/gi, 'entering any universe asset')}`;
                   }
                   return m;
                 });
@@ -209,8 +216,8 @@ function loadStateFromDisk(): ArenaFleetState {
 
               if (Array.isArray(b.aiBrain.antiRepeatRulesActive)) {
                 b.aiBrain.antiRepeatRulesActive = b.aiBrain.antiRepeatRulesActive.map((r: string) => {
-                  if (!r.includes('[Universal')) {
-                    return `[Universal - All 50 Coins] ${r.replace(/entering \w+\/USDT/gi, 'entering any universe asset').replace(/entering \w+/gi, 'entering any universe asset')}`;
+                  if (!r.includes('[Universal - All 300+')) {
+                    return `[Universal - All 300+ Coins] ${r.replace(/\[Universal - All \d+ Coins\]\s*/g, '').replace(/entering \w+\/USDT/gi, 'entering any universe asset').replace(/entering \w+/gi, 'entering any universe asset')}`;
                   }
                   return r;
                 });
@@ -236,8 +243,13 @@ function saveStateToDisk() {
   }
 }
 
-// Telegram Dispatch Helper (Real webhook if configured, else logged to state)
-async function sendTelegramNotification(type: TelegramLog['type'], title: string, text: string, botSerial?: string) {
+// Telegram Dispatch Helper (Real webhook with fallback & diagnostic status reporting)
+async function sendTelegramNotification(
+  type: TelegramLog['type'], 
+  title: string, 
+  text: string, 
+  botSerial?: string
+): Promise<{ ok: boolean; description?: string }> {
   const logEntry: TelegramLog = {
     id: `tlog-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     timestamp: Date.now(),
@@ -248,39 +260,58 @@ async function sendTelegramNotification(type: TelegramLog['type'], title: string
     botSerialNumber: botSerial,
   };
 
-  const { botToken, chatId, enabled } = arenaState.telegramConfig;
+  const rawToken = (arenaState.telegramConfig.botToken || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const rawChatId = (arenaState.telegramConfig.chatId || process.env.TELEGRAM_CHAT_ID || '').trim();
+  const cleanToken = rawToken.replace(/^bot/i, '').trim();
+  const cleanChatId = rawChatId.trim();
 
-  // USER DIRECTIVE: ONLY hourly report should be sent to Telegram, not individual trade data!
-  // Allowed types for Telegram broadcast: HOURLY_REPORT and SYSTEM (manual test button)
+  // Allowed types for Telegram broadcast: HOURLY_REPORT and SYSTEM (test buttons)
   const isAllowedToBroadcast = type === 'HOURLY_REPORT' || type === 'SYSTEM';
 
-  if (enabled && botToken && chatId && isAllowedToBroadcast) {
+  if (!cleanToken || !cleanChatId) {
+    logEntry.status = 'SIMULATED';
+    arenaState.telegramConfig.lastStatus = 'Telegram credentials not set (Enter Bot Token & Chat ID)';
+    arenaState.telegramLogs.unshift(logEntry);
+    if (arenaState.telegramLogs.length > 100) arenaState.telegramLogs.pop();
+    return { ok: false, description: 'Telegram credentials missing (Bot Token / Chat ID)' };
+  }
+
+  if (isAllowedToBroadcast) {
     try {
-      const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-      
+      const url = `https://api.telegram.org/bot${cleanToken}/sendMessage`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
       // Attempt sending with parse_mode HTML
       let response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chat_id: chatId,
+          chat_id: cleanChatId,
           text,
           parse_mode: 'HTML',
         }),
+        signal: controller.signal,
       });
-      let data = await response.json();
+      clearTimeout(timeoutId);
+
+      let data: any = await response.json();
 
       // If HTML entity parsing fails, retry as clean plain text without parse_mode
-      if (!data.ok && data.description && (data.description.includes('can\'t parse') || data.description.includes('entity') || data.description.includes('Bad Request'))) {
+      if (!data.ok && data.description && (data.description.includes('parse') || data.description.includes('entity') || data.description.includes('Bad Request'))) {
         const plainText = text.replace(/<[^>]+>/g, '');
+        const retryController = new AbortController();
+        const retryTimeoutId = setTimeout(() => retryController.abort(), 10000);
         response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            chat_id: chatId,
+            chat_id: cleanChatId,
             text: plainText,
           }),
+          signal: retryController.signal,
         });
+        clearTimeout(retryTimeoutId);
         data = await response.json();
       }
 
@@ -288,20 +319,31 @@ async function sendTelegramNotification(type: TelegramLog['type'], title: string
         logEntry.status = 'SENT';
         arenaState.telegramConfig.lastStatus = `Hourly Report Delivered at ${new Date().toLocaleTimeString()}`;
         arenaState.telegramConfig.lastDispatchTimestamp = Date.now();
+        arenaState.telegramLogs.unshift(logEntry);
+        if (arenaState.telegramLogs.length > 100) arenaState.telegramLogs.pop();
+        console.log(`[Telegram Dispatch SUCCESS] Delivered ${type} to chat ${cleanChatId}`);
+        return { ok: true };
       } else {
         logEntry.status = 'FAILED';
         arenaState.telegramConfig.lastStatus = `Failed: ${data.description || 'API Error'}`;
+        arenaState.telegramLogs.unshift(logEntry);
+        if (arenaState.telegramLogs.length > 100) arenaState.telegramLogs.pop();
+        console.error(`[Telegram Dispatch ERROR] API responded:`, data.description);
+        return { ok: false, description: data.description || 'Telegram API rejected message' };
       }
     } catch (err: any) {
       logEntry.status = 'FAILED';
       arenaState.telegramConfig.lastStatus = `Network Error: ${err.message}`;
+      arenaState.telegramLogs.unshift(logEntry);
+      if (arenaState.telegramLogs.length > 100) arenaState.telegramLogs.pop();
+      console.error(`[Telegram Dispatch EXCEPTION]:`, err.message);
+      return { ok: false, description: `Network Error: ${err.message}` };
     }
   }
 
   arenaState.telegramLogs.unshift(logEntry);
-  if (arenaState.telegramLogs.length > 100) {
-    arenaState.telegramLogs.pop();
-  }
+  if (arenaState.telegramLogs.length > 100) arenaState.telegramLogs.pop();
+  return { ok: true };
 }
 
 // Live Market Data Cache & Fast Spot Sync
@@ -329,6 +371,11 @@ async function syncLiveMarketData() {
       const tickerMap = new Map<string, any>();
       for (const t of tickers) {
         tickerMap.set(t.symbol, t);
+      }
+
+      // Ensure universe has all 300+ verified coins loaded
+      if (!arenaState.coins || arenaState.coins.length < 300) {
+        arenaState.coins = generateTop500Universe();
       }
 
       arenaState.coins = arenaState.coins
@@ -527,14 +574,24 @@ function startArenaEngine() {
 
       const bot = eligibleBots[Math.floor(Math.random() * eligibleBots.length)];
 
-      // Scan candidate coins from across the 300+ verified coin universe and CHOOSE THE BEST TRADE AMONG THEM
-      const candidateSampleCount = 12;
+      // Scan candidate coins from across the FULL 300+ verified coin universe and CHOOSE THE BEST TRADE AMONG THEM
+      const activeBotSymbols = new Set(
+        arenaState.activeTrades.filter(t => t.botId === bot.id).map(t => t.symbol)
+      );
+
+      const validCoins = arenaState.coins.filter(c => 
+        !isHighDecimalOrBlacklistedCoin(c.symbol, c.price) && 
+        !activeBotSymbols.has(`${c.symbol}/USDT`)
+      );
+
+      if (validCoins.length === 0) continue;
+
+      // Evaluate up to 75 candidate coins distributed across all ranks (market cap, momentum, setups)
+      const candidateBatchSize = Math.min(validCoins.length, 75);
+      const offset = (b * 29 + Math.floor(Math.random() * 10)) % validCoins.length;
       const candidates: CryptoCoin[] = [];
-      for (let s = 0; s < candidateSampleCount; s++) {
-        const randCoin = arenaState.coins[Math.floor(Math.random() * arenaState.coins.length)];
-        if (randCoin && !isHighDecimalOrBlacklistedCoin(randCoin.symbol, randCoin.price) && !candidates.some(c => c.symbol === randCoin.symbol)) {
-          candidates.push(randCoin);
-        }
+      for (let i = 0; i < candidateBatchSize; i++) {
+        candidates.push(validCoins[(offset + i) % validCoins.length]);
       }
 
       // Evaluate candidates and select the single BEST trade with highest setup composite score
@@ -545,20 +602,14 @@ function startArenaEngine() {
       } | null = null;
 
       for (const coin of candidates) {
-        // Check if bot already has an active trade on this symbol
-        const alreadyInTrade = arenaState.activeTrades.some(
-          t => t.botId === bot.id && t.symbol === `${coin.symbol}/USDT`
-        );
-        if (alreadyInTrade) continue;
-
         const evalResult = evaluateBotConfirmation(bot, coin, arenaState.bots);
         if (evalResult.qualifies) {
           // Composite setup score: confidence weight + rules passed + setup quality + volatility momentum
           const compositeScore = 
-            (evalResult.confidenceScore * 2.5) + 
-            (evalResult.confirmedCount * 5) + 
+            (evalResult.confidenceScore * 3.0) + 
+            (evalResult.confirmedCount * 7.0) + 
             (coin.currentSetupQuality || 85) + 
-            (Math.abs(coin.change24h) * 2);
+            (Math.abs(coin.change24h) * 2.5);
 
           if (!bestCandidate || compositeScore > bestCandidate.score) {
             bestCandidate = { coin, evalResult, score: compositeScore };
@@ -609,20 +660,30 @@ function startArenaEngine() {
     : 0;
 
   // 5. Hourly Telegram Summary Dispatcher Check (every 60 mins)
-  const summaryIntervalMs = (arenaState.telegramConfig.summaryIntervalMinutes || 60) * 60 * 1000;
-  const isTimeForHourly = (!arenaState.lastHourlySummaryTimestamp && arenaState.telegramConfig.enabled && arenaState.telegramConfig.botToken && arenaState.telegramConfig.chatId)
-    || (now - arenaState.lastHourlySummaryTimestamp >= summaryIntervalMs);
+  // USER MANDATE: "telegram hourly report send not working"
+  // Ensures reliable recurring delivery every 60 minutes, with prompt delivery on server start if configured
+  const effectiveBotToken = (arenaState.telegramConfig.botToken || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const effectiveChatId = (arenaState.telegramConfig.chatId || process.env.TELEGRAM_CHAT_ID || '').trim();
+  const isTgConfigured = Boolean(effectiveBotToken && effectiveChatId);
+  const isTgEnabled = arenaState.telegramConfig.enabled !== false && arenaState.telegramConfig.notifyHourlySummary !== false;
 
-  if (isTimeForHourly) {
+  const summaryIntervalMs = (arenaState.telegramConfig.summaryIntervalMinutes || 60) * 60 * 1000;
+  const timeSinceLastSummary = now - (arenaState.lastHourlySummaryTimestamp || 0);
+  const timeSinceBoot = now - (arenaState.serverBootTimestamp || now);
+
+  const shouldDispatchHourly = isTgConfigured && isTgEnabled && (
+    (!arenaState.telegramConfig.lastDispatchTimestamp && timeSinceBoot >= 15000) ||
+    (timeSinceLastSummary >= summaryIntervalMs)
+  );
+
+  if (shouldDispatchHourly) {
     arenaState.lastHourlySummaryTimestamp = now;
-    if (arenaState.telegramConfig.enabled && arenaState.telegramConfig.botToken && arenaState.telegramConfig.chatId && arenaState.telegramConfig.notifyHourlySummary !== false) {
-      const summaryMsg = formatHourlyTelegramSummary(arenaState);
-      sendTelegramNotification(
-        'HOURLY_REPORT',
-        '📊 1-HOUR ARENA PERFORMANCE & TOP 10 RANKING REPORT',
-        summaryMsg
-      );
-    }
+    const summaryMsg = formatHourlyTelegramSummary(arenaState);
+    sendTelegramNotification(
+      'HOURLY_REPORT',
+      '📊 1-HOUR ARENA PERFORMANCE & TOP 10 RANKING REPORT',
+      summaryMsg
+    ).catch(err => console.error('[Hourly Dispatch Err]:', err));
   }
 
   saveStateToDisk();
@@ -880,8 +941,8 @@ app.post('/api/arena/trade/close', (req, res) => {
 app.post('/api/arena/telegram/config', (req, res) => {
   const { botToken, chatId, enabled, notifyOnTradeOpen, notifyOnTP1, notifyOnTP2, notifyOnStopLoss, notifyHourlySummary } = req.body;
   
-  if (botToken !== undefined) arenaState.telegramConfig.botToken = botToken;
-  if (chatId !== undefined) arenaState.telegramConfig.chatId = chatId;
+  if (botToken !== undefined) arenaState.telegramConfig.botToken = typeof botToken === 'string' ? botToken.trim() : botToken;
+  if (chatId !== undefined) arenaState.telegramConfig.chatId = typeof chatId === 'string' ? chatId.trim() : chatId;
   if (enabled !== undefined) arenaState.telegramConfig.enabled = Boolean(enabled);
   if (notifyOnTradeOpen !== undefined) arenaState.telegramConfig.notifyOnTradeOpen = Boolean(notifyOnTradeOpen);
   if (notifyOnTP1 !== undefined) arenaState.telegramConfig.notifyOnTP1 = Boolean(notifyOnTP1);
@@ -894,23 +955,73 @@ app.post('/api/arena/telegram/config', (req, res) => {
 });
 
 app.post('/api/arena/telegram/hourly-trigger', async (req, res) => {
+  const rawToken = (arenaState.telegramConfig.botToken || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const rawChat = (arenaState.telegramConfig.chatId || process.env.TELEGRAM_CHAT_ID || '').trim();
+
+  if (!rawToken || !rawChat) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Telegram Bot Token or Chat ID is missing. Please enter your Telegram credentials in the form below.',
+      lastStatus: 'Credentials Missing',
+    });
+  }
+
   arenaState.lastHourlySummaryTimestamp = Date.now();
   const msg = formatHourlyTelegramSummary(arenaState);
-  await sendTelegramNotification('HOURLY_REPORT', '📊 INSTANT 1-HOUR ARENA SUMMARY DISPATCH', msg);
+  const result = await sendTelegramNotification('HOURLY_REPORT', '📊 INSTANT 1-HOUR ARENA SUMMARY DISPATCH', msg);
   saveStateToDisk();
-  res.json({ status: 'ok', message: 'Hourly summary dispatched', lastStatus: arenaState.telegramConfig.lastStatus });
+
+  if (!result || !result.ok) {
+    return res.status(502).json({
+      status: 'error',
+      message: `Telegram dispatch failed: ${result?.description || arenaState.telegramConfig.lastStatus || 'Failed to send'}`,
+      lastStatus: arenaState.telegramConfig.lastStatus,
+    });
+  }
+
+  res.json({ 
+    status: 'ok', 
+    message: '1-Hour Report successfully delivered to Telegram chat!', 
+    lastStatus: arenaState.telegramConfig.lastStatus 
+  });
 });
 
 app.post('/api/arena/telegram/test', async (req, res) => {
+  const rawToken = (arenaState.telegramConfig.botToken || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const rawChat = (arenaState.telegramConfig.chatId || process.env.TELEGRAM_CHAT_ID || '').trim();
+
+  if (!rawToken || !rawChat) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Telegram Bot Token or Chat ID is missing. Please enter your Telegram credentials in the form below.',
+      lastStatus: 'Credentials Missing',
+    });
+  }
+
   const testMsg = `🧪 <b>APEX 40 AI CRYPTO BOT ARENA — WEBHOOK TEST</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `✅ <b>Connection Status:</b> LIVE &amp; OPERATIONAL\n` +
     `🤖 <b>Active Arena Bots:</b> 40 Autonomous AI Units\n` +
+    `🛡 <b>Coin Universe:</b> 300+ Verified Market Cap Assets\n` +
     `⏱ <b>24/7 Cloud Host:</b> Connected\n` +
     `📡 <b>Telegram Relay:</b> Hourly Intelligence Dispatch Ready`;
   
-  await sendTelegramNotification('SYSTEM', '🧪 TELEGRAM BOT CONNECTION TEST', testMsg);
-  res.json({ status: 'ok', message: 'Test message sent', lastStatus: arenaState.telegramConfig.lastStatus });
+  const result = await sendTelegramNotification('SYSTEM', '🧪 TELEGRAM BOT CONNECTION TEST', testMsg);
+  saveStateToDisk();
+
+  if (!result || !result.ok) {
+    return res.status(502).json({
+      status: 'error',
+      message: `Telegram test ping failed: ${result?.description || arenaState.telegramConfig.lastStatus || 'Failed to send'}`,
+      lastStatus: arenaState.telegramConfig.lastStatus,
+    });
+  }
+
+  res.json({ 
+    status: 'ok', 
+    message: 'Test ping successfully delivered to Telegram chat!', 
+    lastStatus: arenaState.telegramConfig.lastStatus 
+  });
 });
 
 app.post('/api/arena/scan/toggle', (req, res) => {

@@ -759,7 +759,7 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
-                              🌐 Universal (All 50 Coins)
+                              🌐 Universal (All 300+ Coins)
                             </span>
                             <span className="text-[10px] text-slate-500 font-mono">
                               {new Date(log.timestamp).toLocaleTimeString()}
@@ -779,7 +779,7 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                         <div className="text-xs p-2.5 rounded-lg bg-emerald-50/80 border border-emerald-200 text-emerald-950 font-medium">
                           <strong className="text-emerald-800 flex items-center gap-1 mb-1">
                             <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                            Global Strategy Adaptation (Applied across ALL 50 Scanned Universe Pairs):
+                            Global Strategy Adaptation (Applied across ALL 300+ Scanned Universe Pairs):
                           </strong>
                           <span>{log.adaptationApplied}</span>
                         </div>
@@ -809,12 +809,12 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                 </p>
               </div>
 
-              {/* Universal Parameters Matrix (Active on ALL 50 Coins) */}
+              {/* Universal Parameters Matrix (Active on ALL 300+ Coins) */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                     <Globe className="w-3.5 h-3.5 text-emerald-600" />
-                    Universal Parameter Matrix (Active across ALL 50 Scanned Universe Pairs)
+                    Universal Parameter Matrix (Active across ALL 300+ Scanned Universe Pairs)
                   </h4>
                   <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
                     Fleet-Wide Calibration
@@ -827,7 +827,7 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                     <div className="text-sm font-extrabold text-slate-900 font-mono mt-0.5">
                       {bot.aiBrain.adaptedParameters?.minConfidenceScore || 90}%
                     </div>
-                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">All 50 Coins</div>
+                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">All 300+ Coins</div>
                   </div>
 
                   <div className="p-2.5 rounded-lg bg-white border border-slate-200">
