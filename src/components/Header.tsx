@@ -71,17 +71,17 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-                  Apex 40 AI Crypto Bot Arena
+                  Apex AI Crypto Bot Arena
                 </h1>
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 animate-pulse">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  40 BOTS LIVE
+                  {state.bots.length} BOTS LIVE
                 </span>
               </div>
               <p className="text-xs text-slate-500 flex flex-wrap items-center gap-2 mt-0.5 font-medium">
                 <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  Verified Contracts Only (No KAS)
+                  300+ Verified Contracts (No KAS)
                 </span>
                 <span className="text-slate-300">•</span>
                 <span className="inline-flex items-center gap-1 text-cyan-700 font-semibold font-mono">
@@ -194,9 +194,9 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Bot className="w-4 h-4" />
-            <span>40 Bots Arena</span>
+            <span>{state.bots.length} Bots Arena</span>
             <span className={`px-1.5 py-0.2 text-[10px] rounded-md ${activeView === 'ARENA_HOME' ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
-              40
+              {state.bots.length}
             </span>
           </button>
 
@@ -210,7 +210,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Activity className="w-4 h-4" />
-            <span>Live Trades & Multi-Tier TP</span>
+            <span>Live Trades & TP1/TP2 Rules</span>
             {state.activeTrades.length > 0 && (
               <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded-md ${activeView === 'LIVE_TRADES' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>
                 {state.activeTrades.length}
@@ -228,7 +228,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Search className="w-4 h-4" />
-            <span>CMC 500 Market Scanner</span>
+            <span>300+ Verified Coins Scanner</span>
             <span className={`px-1.5 py-0.2 text-[10px] rounded-md ${activeView === 'CMC_500' ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
               {state.coins.length} Coins
             </span>

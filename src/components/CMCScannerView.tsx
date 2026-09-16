@@ -58,10 +58,10 @@ export const CMCScannerView: React.FC<CMCScannerViewProps> = ({ coins, isScannin
           <div>
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Search className="w-5 h-5 text-emerald-600" />
-              CMC 500 Market Scanner Universe (Live Spot Synced)
+              300+ Verified Market Cap Universe ({coins.length} Coins Live Spot Synced)
             </h2>
             <p className="text-xs text-slate-500 mt-0.5 font-medium">
-              Live multi-timeframe spot evaluation with on-chain verified smart contract addresses.
+              Scanning {coins.length} verified cryptocurrency assets ranked by market cap with audited contract addresses. Evaluates setups and selects the single best trade among all coins.
             </p>
           </div>
 

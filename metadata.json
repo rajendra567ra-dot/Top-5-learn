@@ -1,6 +1,6 @@
 {
   "name": "Apex 40 AI Crypto Bot Arena",
-  "description": "Autonomous arena of 40 advanced AI crypto trading bots with dynamic $100 portfolios, 10-indicator multi-timeframe confirmation engines, human-like neural mistake learning, live CMC 500 scanner, and 24/7 automated Telegram reports.",
+  "description": "Autonomous arena of AI crypto trading bots with dynamic $100 portfolios, 300+ verified market cap universe scanning, multi-coin universal AI mistake adaptation, dual-consensus combination bots, and 0.8x/1.2x TP profit booking.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

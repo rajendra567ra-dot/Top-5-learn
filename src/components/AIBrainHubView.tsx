@@ -58,15 +58,15 @@ export const AIBrainHubView: React.FC<AIBrainHubViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-slate-900">
-                  40 Autonomous AI Brains & Self-Adapting Strategy Engine
+                  {bots.length} Autonomous AI Brains & Universal Multi-Coin Strategy Adaptation
                 </h2>
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
                   <Sparkles className="w-3 h-3 text-purple-600" />
-                  Self-Learning Active
+                  Universe-Wide Adaptation Active
                 </span>
               </div>
               <p className="text-xs text-slate-600 mt-0.5 font-medium">
-                Every bot continuously monitors past trade outcomes, extracts root causes, updates anti-repeat rules, and auto-adapts strategy thresholds.
+                Every bot continuously diagnoses past trades. When a bad trade occurs, lessons and adapted parameters are synthesized across <strong>ALL 300+ coins</strong> to protect future entries everywhere—not just on the coin that had the bad trade.
               </p>
             </div>
           </div>
@@ -168,7 +168,7 @@ export const AIBrainHubView: React.FC<AIBrainHubViewProps> = ({
             <div className="p-2 rounded-lg bg-white border border-purple-200">
               <div className="text-[10px] text-slate-500 font-bold uppercase">TP1 Target Allocation</div>
               <div className="font-mono font-bold text-emerald-700 mt-0.5">
-                {selectedBot.aiBrain.adaptedParameters.tp1ProfitTargetPercent || 35}% Booked (SL → BE)
+                {selectedBot.aiBrain.adaptedParameters.tp1ProfitTargetPercent || 50}% Booked (SL → Entry)
               </div>
             </div>
           </div>
@@ -206,7 +206,7 @@ export const AIBrainHubView: React.FC<AIBrainHubViewProps> = ({
               onChange={(e) => setSelectedBotId(e.target.value)}
               className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white"
             >
-              <option value="ALL">All 40 Bots Combined Feed</option>
+              <option value="ALL">All {bots.length} Bots Combined Feed</option>
               {bots.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.serialNumber} — {b.name} ({b.aiBrain.mistakesLearnedCount} Lessons, Gen {b.aiBrain.evolutionGeneration || 1})

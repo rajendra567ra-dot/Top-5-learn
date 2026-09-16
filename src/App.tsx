@@ -121,7 +121,66 @@ export const App: React.FC = () => {
       if (res.ok) {
         const json = await res.json();
         setState(json.data);
-        showToast('Arena reset completed! All 40 bots restored to fresh $100 accounts.');
+        showToast('Arena reset completed! Starting balances set to $100. AI Brain lessons learned remain 100% preserved.');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Toggle Bot Status (Active / Paused)
+  const handleToggleBotStatus = async (botId: string) => {
+    try {
+      const res = await fetch('/api/arena/bot/toggle-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botId }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setState(json.data);
+        showToast(json.message);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Delete Bot
+  const handleDeleteBot = async (botId: string) => {
+    try {
+      const res = await fetch('/api/arena/bot/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botId }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setState(json.data);
+        showToast(json.message);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Create Combination Bot
+  const handleCreateCombinationBot = async (data: {
+    name: string;
+    parentAId: string;
+    parentBId: string;
+    customSerialNumber?: string;
+  }) => {
+    try {
+      const res = await fetch('/api/arena/bot/create-combination', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setState(json.data);
+        showToast(json.message);
       }
     } catch (err) {
       console.error(err);
@@ -217,6 +276,9 @@ export const App: React.FC = () => {
           <ArenaBotsView
             bots={state.bots}
             onSelectBot={handleSelectBot}
+            onToggleBotStatus={handleToggleBotStatus}
+            onDeleteBot={handleDeleteBot}
+            onCreateCombinationBot={handleCreateCombinationBot}
           />
         )}
 

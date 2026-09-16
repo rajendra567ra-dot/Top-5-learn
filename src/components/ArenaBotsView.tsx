@@ -14,22 +14,45 @@ import {
   Activity,
   Zap,
   Sparkles,
-  ChevronRight
+  ChevronRight,
+  Pause,
+  Play,
+  Trash2,
+  Plus,
+  X,
+  Layers,
+  CheckCircle2
 } from 'lucide-react';
 import { ArenaBot, RankingMode, StrategyCategoryType } from '../types';
 
 interface ArenaBotsViewProps {
   bots: ArenaBot[];
   onSelectBot: (bot: ArenaBot) => void;
+  onToggleBotStatus?: (botId: string) => void;
+  onDeleteBot?: (botId: string) => void;
+  onCreateCombinationBot?: (data: { name: string; parentAId: string; parentBId: string; customSerialNumber?: string }) => void;
 }
 
-export const ArenaBotsView: React.FC<ArenaBotsViewProps> = ({ bots, onSelectBot }) => {
+export const ArenaBotsView: React.FC<ArenaBotsViewProps> = ({ 
+  bots, 
+  onSelectBot,
+  onToggleBotStatus,
+  onDeleteBot,
+  onCreateCombinationBot 
+}) => {
   const [rankingMode, setRankingMode] = useState<RankingMode>('ALPHABETICAL');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
 
+  // Combination modal state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [comboName, setComboName] = useState('');
+  const [comboSerial, setComboSerial] = useState('BOT-51');
+  const [parentAId, setParentAId] = useState('');
+  const [parentBId, setParentBId] = useState('');
+
   const categories: { label: string; value: string }[] = [
-    { label: 'All 40 Bots', value: 'ALL' },
+    { label: `All ${bots.length} Bots`, value: 'ALL' },
     { label: 'Trend Following', value: 'TREND' },
     { label: 'Breakout & Volume', value: 'BREAKOUT' },
     { label: 'Pullback & Retest', value: 'PULLBACK' },
@@ -228,8 +251,68 @@ export const ArenaBotsView: React.FC<ArenaBotsViewProps> = ({ bots, onSelectBot 
                     </div>
                   </div>
 
-                  {/* Generation Badge */}
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1 shrink-0">
+                  {/* Top Right Actions & Badges */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {/* Active / Pause Toggle Button */}
+                    <button
+                      type="button"
+                      title={bot.status === 'PAUSED' ? 'Resume Bot' : 'Pause Bot'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleBotStatus?.(bot.id);
+                      }}
+                      className={`p-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                        bot.status === 'PAUSED'
+                          ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                          : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200'
+                      }`}
+                    >
+                      {bot.status === 'PAUSED' ? (
+                        <Play className="w-3.5 h-3.5 fill-current text-amber-700" />
+                      ) : (
+                        <Pause className="w-3.5 h-3.5 fill-current text-slate-600" />
+                      )}
+                    </button>
+
+                    {/* Delete Bot Button */}
+                    <button
+                      type="button"
+                      title="Delete Bot"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`Are you sure you want to delete ${bot.serialNumber} (${bot.name})?`)) {
+                          onDeleteBot?.(bot.id);
+                        }
+                      }}
+                      className="p-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500 border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status & Hybrid Badges */}
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  {bot.status === 'PAUSED' ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1">
+                      <Pause className="w-2.5 h-2.5 fill-current" />
+                      PAUSED
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      ACTIVE
+                    </span>
+                  )}
+
+                  {bot.isCombinationBot && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
+                      <Layers className="w-2.5 h-2.5 text-purple-600" />
+                      Dual-Consensus Hybrid
+                    </span>
+                  )}
+
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
                     <Sparkles className="w-2.5 h-2.5 text-purple-600" />
                     Gen {bot.aiBrain.evolutionGeneration || 1}
                   </span>
@@ -303,6 +386,191 @@ export const ArenaBotsView: React.FC<ArenaBotsViewProps> = ({ bots, onSelectBot 
           <Bot className="w-10 h-10 text-slate-400 mx-auto mb-2" />
           <h3 className="text-sm font-bold text-slate-800">No trading bots match your search</h3>
           <p className="text-xs text-slate-500 mt-1">Try resetting the search query or category filter</p>
+        </div>
+      )}
+
+      {/* Bottom CTA: Create New Bot (Combination of Two Current Bots) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-white shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="space-y-1 text-center md:text-left">
+          <div className="flex items-center justify-center md:justify-start gap-2">
+            <Layers className="w-4 h-4 text-emerald-400" />
+            <h4 className="text-sm font-bold text-white">Create New Bot (Combination of Two Bots)</h4>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              Dual-Consensus Engine
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+            Create a hybrid bot from two existing bots (e.g. <strong>Bot No 51 Lunar Eclipse</strong> combining <em>3.Apex Breakout + 7.Gravity Pullback</em>). Starts with $100 balance and only executes when <strong>BOTH</strong> parent strategies confirm the exact same trade setup and direction.
+          </p>
+        </div>
+
+        <button
+          id="create-new-combination-bot-btn"
+          onClick={() => {
+            const existingNums = bots.map(b => parseInt(b.serialNumber.replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
+            const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 41;
+            setComboSerial(`BOT-${String(nextNum).padStart(2, '0')}`);
+            if (bots.length >= 2) {
+              setParentAId(bots[0].id);
+              setParentBId(bots[1].id);
+              setComboName(`Lunar Eclipse (${bots[0].serialNumber}.${bots[0].name} + ${bots[1].serialNumber}.${bots[1].name})`);
+            }
+            setIsCreateModalOpen(true);
+          }}
+          className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Create New Bot</span>
+        </button>
+      </div>
+
+      {/* Modal: Create Combination Bot */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-5 text-slate-900">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Create New Combination Bot</h3>
+                  <p className="text-xs text-slate-500">Combines two strategies into a dual-consensus trading bot</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="space-y-4 text-xs">
+              {/* Bot Number and Name */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-1 space-y-1">
+                  <label className="font-bold text-slate-700">Bot Number:</label>
+                  <input
+                    type="text"
+                    value={comboSerial}
+                    onChange={(e) => setComboSerial(e.target.value)}
+                    placeholder="BOT-51"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <label className="font-bold text-slate-700">Bot Name:</label>
+                  <input
+                    type="text"
+                    value={comboName}
+                    onChange={(e) => setComboName(e.target.value)}
+                    placeholder="e.g. Lunar Eclipse"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Select Parent Bot A */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700">Select Parent Strategy A:</label>
+                <select
+                  value={parentAId}
+                  onChange={(e) => {
+                    const newA = e.target.value;
+                    setParentAId(newA);
+                    const botA = bots.find(b => b.id === newA);
+                    const botB = bots.find(b => b.id === parentBId);
+                    if (botA && botB) {
+                      setComboName(`Lunar Eclipse (${botA.serialNumber}.${botA.name} + ${botB.serialNumber}.${botB.name})`);
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="" disabled>Choose first parent bot...</option>
+                  {bots.map((b) => (
+                    <option key={b.id} value={b.id} disabled={b.id === parentBId}>
+                      {b.serialNumber} • {b.name} ({b.strategyCategory})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Select Parent Bot B */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700">Select Parent Strategy B:</label>
+                <select
+                  value={parentBId}
+                  onChange={(e) => {
+                    const newB = e.target.value;
+                    setParentBId(newB);
+                    const botA = bots.find(b => b.id === parentAId);
+                    const botB = bots.find(b => b.id === newB);
+                    if (botA && botB) {
+                      setComboName(`Lunar Eclipse (${botA.serialNumber}.${botA.name} + ${botB.serialNumber}.${botB.name})`);
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="" disabled>Choose second parent bot...</option>
+                  {bots.map((b) => (
+                    <option key={b.id} value={b.id} disabled={b.id === parentAId}>
+                      {b.serialNumber} • {b.name} ({b.strategyCategory})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Dual-Consensus Rule Explainer */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Dual-Consensus Execution Rules:
+                </div>
+                <div className="text-[11px] text-slate-600 space-y-1">
+                  <p>• Starting Balance: <strong>$100.00</strong> dynamic portfolio.</p>
+                  <p>• Dual-Confirmation: The bot will <strong>ONLY</strong> trade if Strategy A and Strategy B BOTH confirm the exact same direction (LONG/SHORT).</p>
+                  <p>• Takes the best trade across 300+ verified coins with dynamic leverage, TP1 booked at 50% (SL to Entry), and full close at TP2.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsCreateModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors border border-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!parentAId || !parentBId || parentAId === parentBId}
+                onClick={() => {
+                  if (parentAId && parentBId && parentAId !== parentBId) {
+                    onCreateCombinationBot?.({
+                      name: comboName.trim(),
+                      parentAId,
+                      parentBId,
+                      customSerialNumber: comboSerial.trim(),
+                    });
+                    setIsCreateModalOpen(false);
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  !parentAId || !parentBId || parentAId === parentBId
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Deploy Combination Bot ($100 Balance)</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

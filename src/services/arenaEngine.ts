@@ -96,7 +96,7 @@ export function adaptBotStrategyFromPast(
   }
 }
 
-export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
+export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin, allBots?: ArenaBot[]): {
   qualifies: boolean;
   confirmedCount: number;
   confidenceScore: number;
@@ -114,6 +114,58 @@ export function evaluateBotConfirmation(bot: ArenaBot, coin: CryptoCoin): {
       rationale: `Rejected: ${coin.symbol} failed contract address verification or is on the excluded asset blacklist (including KAS).`,
       evaluatedRules: bot.confirmationRules.map(r => ({ ...r, isConfirmed: false, liveValue: 'Contract/Asset Rejected' })),
     };
+  }
+
+  // Dual-Consensus Combination Bot Logic:
+  // Rules: It can ONLY trade when BOTH parent bots confirm the same setup and direction!
+  if (bot.isCombinationBot && bot.parentBotIds && bot.parentBotIds.length >= 2 && allBots && allBots.length > 0) {
+    const parentA = allBots.find(b => b.id === bot.parentBotIds![0]);
+    const parentB = allBots.find(b => b.id === bot.parentBotIds![1]);
+    if (parentA && parentB) {
+      const evalA = evaluateBotConfirmation(parentA, coin, allBots);
+      const evalB = evaluateBotConfirmation(parentB, coin, allBots);
+
+      const bothAgree = evalA.qualifies && evalB.qualifies && evalA.direction === evalB.direction;
+      if (bothAgree) {
+        const dualConfidence = Math.min(99, Math.round((evalA.confidenceScore + evalB.confidenceScore) / 2) + 4);
+        const dualRulesCount = Math.min(10, Math.round((evalA.confirmedCount + evalB.confirmedCount) / 2));
+        return {
+          qualifies: true,
+          confirmedCount: dualRulesCount,
+          confidenceScore: dualConfidence,
+          direction: evalA.direction,
+          rationale: `🎯 Dual-Consensus High-Accuracy Confirmation: Both ${parentA.serialNumber}.${parentA.name} and ${parentB.serialNumber}.${parentB.name} independently confirmed ${evalA.direction} setup on ${coin.symbol} with ${dualConfidence}% dual conviction!`,
+          evaluatedRules: bot.confirmationRules.map((r, i) => ({
+            ...r,
+            isConfirmed: true,
+            liveValue: `Dual Consensus: ${parentA.name} (${evalA.confidenceScore}%) + ${parentB.name} (${evalB.confidenceScore}%) [PASS]`
+          })),
+        };
+      } else {
+        let vetoReason = '';
+        if (!evalA.qualifies && !evalB.qualifies) {
+          vetoReason = `Neither ${parentA.name} nor ${parentB.name} confirmed this setup.`;
+        } else if (!evalA.qualifies) {
+          vetoReason = `${parentA.name} setup unconfirmed (Both bots must validate simultaneously).`;
+        } else if (!evalB.qualifies) {
+          vetoReason = `${parentB.name} setup unconfirmed (Both bots must validate simultaneously).`;
+        } else {
+          vetoReason = `Direction conflict: ${parentA.name} signals ${evalA.direction} while ${parentB.name} signals ${evalB.direction}.`;
+        }
+        return {
+          qualifies: false,
+          confirmedCount: Math.min(evalA.confirmedCount, evalB.confirmedCount),
+          confidenceScore: Math.min(evalA.confidenceScore, evalB.confidenceScore),
+          direction: evalA.direction,
+          rationale: `Dual-Consensus Veto: Setup on ${coin.symbol} rejected. ${vetoReason}`,
+          evaluatedRules: bot.confirmationRules.map((r, i) => ({
+            ...r,
+            isConfirmed: false,
+            liveValue: vetoReason
+          })),
+        };
+      }
+    }
   }
 
   // Determine high-conviction direction: support BOTH LONG and SHORT setups
@@ -418,12 +470,8 @@ export function calculateTradeParameters(
   
   // Stop Loss Distance: Mathematically aligns so initial SL hit equals max loss (1.5% of dynamic capital)
   // maxLossUsd / positionSize = (0.015 * balance) / (0.03 * balance * leverage) = 0.5 / leverage
+  // If leverage = 5: slDistancePercent = 0.10 (10%). For entry 100, x = 10, SL = 90, TP1 = 108, TP2 = 112
   const slDistancePercent = parseFloat((0.5 / leverage).toFixed(4));
-
-  // MANDATE: TP1 MUST BE EQUAL DISTANCE TO SL COMPARED TO ENTRY PRICE
-  // Distance from entry price to TP1 = Distance from entry price to SL
-  const tp1DistancePercent = slDistancePercent;
-  const tp2DistancePercent = parseFloat((slDistancePercent * 2.0).toFixed(4));
 
   // Format price helper with appropriate precision for any asset tier (OP at $0.0970, BTC at $77,318)
   const dec = entryPrice < 0.1 ? 5 : entryPrice < 1 ? 4 : entryPrice < 10 ? 3 : 2;
@@ -431,8 +479,14 @@ export function calculateTradeParameters(
     return parseFloat(val.toFixed(dec));
   };
 
-  // Exact distance in price units so |tp1Price - entryPrice| === |initialStopLossPrice - entryPrice|
-  const distInPrice = parseFloat((entryPrice * slDistancePercent).toFixed(dec));
+  // Distance x from entry price to initial stop loss
+  // If entry price to sl distance is x:
+  // - Entry price to TP1 distance is 0.8x
+  // - Entry price to TP2 distance is 1.2x
+  // Example: entry price 100 & SL 90 (x = 10) -> TP1 108 (0.8*10 = 8) & TP2 112 (1.2*10 = 12)
+  const x = parseFloat((entryPrice * slDistancePercent).toFixed(dec));
+  const tp1Dist = parseFloat((0.8 * x).toFixed(dec));
+  const tp2Dist = parseFloat((1.2 * x).toFixed(dec));
   
   let initialStopLossPrice: number;
   let tp1Price: number;
@@ -440,18 +494,14 @@ export function calculateTradeParameters(
   let liquidationPrice: number;
 
   if (direction === 'LONG') {
-    // LONG: TP is higher than entry, SL is lower than entry
-    // Equal distance: entryPrice - SL === TP1 - entryPrice
-    initialStopLossPrice = formatPrice(entryPrice - distInPrice);
-    tp1Price = formatPrice(entryPrice + distInPrice);
-    tp2Price = formatPrice(entryPrice + (distInPrice * 2));
+    initialStopLossPrice = formatPrice(entryPrice - x);
+    tp1Price = formatPrice(entryPrice + tp1Dist);
+    tp2Price = formatPrice(entryPrice + tp2Dist);
     liquidationPrice = formatPrice(entryPrice * (1 - (1 / leverage) * 0.9));
   } else {
-    // SHORT: TP is lower than entry, SL is higher than entry
-    // Equal distance: SL - entryPrice === entryPrice - TP1
-    initialStopLossPrice = formatPrice(entryPrice + distInPrice);
-    tp1Price = formatPrice(entryPrice - distInPrice);
-    tp2Price = formatPrice(entryPrice - (distInPrice * 2));
+    initialStopLossPrice = formatPrice(entryPrice + x);
+    tp1Price = formatPrice(entryPrice - tp1Dist);
+    tp2Price = formatPrice(entryPrice - tp2Dist);
     liquidationPrice = formatPrice(entryPrice * (1 + (1 / leverage) * 0.9));
   }
 
@@ -481,8 +531,8 @@ export function calculateTradeParameters(
     tp1Hit: false,
     tp2Price,
     tp2Hit: false,
-    runnerPercent: 40,
-    runnerActive: true,
+    runnerPercent: 0,
+    runnerActive: false, // MANDATE: Close trade when it hits TP2 & no running trade
     totalBookedPnL: 0.0,
     unrealizedPnL: 0.0,
     unrealizedPnLPercent: 0.0,
@@ -531,14 +581,14 @@ export function updateTradePriceAndTargets(
     updated.exitTime = Date.now();
     updated.realizedPnL = parseFloat(finalPnl.toFixed(2));
     updated.realizedPnLPercent = parseFloat(((finalPnl / updated.margin) * 100).toFixed(2));
-    updated.exitReason = updated.slMode === 'BREAKEVEN_TP1' || updated.slMode === 'LOCKED_TP2'
-      ? `Trailing Stop Triggered after TP Booking (+ $${finalPnl.toFixed(2)})`
+    updated.exitReason = updated.slMode === 'BREAKEVEN_TP1'
+      ? `Breakeven Stop Hit after TP1 50% Profit Booked (+ $${finalPnl.toFixed(2)})`
       : `Stop Loss Hit (- $${Math.abs(finalPnl).toFixed(2)})`;
     realizedPnLDelta = finalPnl;
     return { updatedTrade: updated, eventFired, realizedPnLDelta };
   }
 
-  // 2. Check TP1 Hit (Book 35% profit, move SL to Entry / Break-Even)
+  // 2. Check TP1 Hit (Book 50% of profit at TP1, move SL to Entry / Break-Even)
   const isTp1Triggered = !updated.tp1Hit && (
     updated.direction === 'LONG' ? newPrice >= updated.tp1Price : newPrice <= updated.tp1Price
   );
@@ -547,18 +597,18 @@ export function updateTradePriceAndTargets(
     updated.tp1Hit = true;
     updated.tp1HitTime = Date.now();
     
-    // Book 35% of the position profit
-    const tp1Booked = parseFloat((Math.max(0.01, updated.unrealizedPnL * 0.35)).toFixed(2));
+    // Book 50% of the position profit
+    const tp1Booked = parseFloat((Math.max(0.01, updated.unrealizedPnL * 0.50)).toFixed(2));
     updated.tp1BookedAmount = tp1Booked;
     updated.totalBookedPnL = parseFloat((updated.totalBookedPnL + tp1Booked).toFixed(2));
     
-    // Move SL to Entry Price (Break-Even) immediately eliminating all downside risk!
+    // Move SL to Entry Price (Break-Even) immediately!
     updated.stopLossPrice = updated.entryPrice;
     updated.slMode = 'BREAKEVEN_TP1';
     eventFired = 'TP1_HIT';
   }
 
-  // 3. Check TP2 Hit (Book 25% profit, move SL to TP1 Price)
+  // 3. Check TP2 Hit (Book remaining 50% profit, CLOSE trade completely, NO running trade)
   const isTp2Triggered = updated.tp1Hit && !updated.tp2Hit && (
     updated.direction === 'LONG' ? newPrice >= updated.tp2Price : newPrice <= updated.tp2Price
   );
@@ -567,36 +617,23 @@ export function updateTradePriceAndTargets(
     updated.tp2Hit = true;
     updated.tp2HitTime = Date.now();
     
-    // Book 25% of the position profit
-    const tp2Booked = parseFloat((Math.max(0.01, updated.unrealizedPnL * 0.25)).toFixed(2));
+    // Book remaining 50% profit
+    const tp2Booked = parseFloat((Math.max(0.01, updated.unrealizedPnL * 0.50)).toFixed(2));
     updated.tp2BookedAmount = tp2Booked;
-    updated.totalBookedPnL = parseFloat((updated.totalBookedPnL + tp2Booked).toFixed(2));
+    const finalPnl = parseFloat((updated.totalBookedPnL + tp2Booked).toFixed(2));
     
-    // Move SL to TP1 Price (Lock in profits at TP1 milestone!)
-    updated.stopLossPrice = updated.tp1Price;
-    updated.slMode = 'LOCKED_TP2';
+    // MANDATE: Close trade when it hits TP2 & no running trade
+    updated.status = 'CLOSED_TP';
+    updated.closePrice = newPrice;
+    updated.exitTime = Date.now();
+    updated.realizedPnL = finalPnl;
+    updated.realizedPnLPercent = parseFloat(((finalPnl / updated.margin) * 100).toFixed(2));
+    updated.exitReason = `Target TP2 Hit (100% Position Closed: 50% booked at TP1 + 50% booked at TP2: + $${finalPnl.toFixed(2)})`;
+    updated.runnerActive = false;
+    updated.runnerPercent = 0;
     eventFired = 'TP2_HIT';
-  }
-
-  // 4. Check Trailing Runner (Keep 40% runner & trailing SL according to structure)
-  if (updated.tp2Hit && updated.runnerActive) {
-    const tp1Dist = Math.abs(updated.tp1Price - updated.entryPrice);
-    const trailBuffer = Math.max(tp1Dist * 0.75, newPrice * 0.012);
-    const precision = newPrice < 0.1 ? 5 : newPrice < 1 ? 4 : newPrice < 10 ? 3 : 2;
-
-    if (updated.direction === 'LONG') {
-      const structureTrailing = parseFloat((newPrice - trailBuffer).toFixed(precision));
-      if (structureTrailing > updated.stopLossPrice) {
-        updated.stopLossPrice = structureTrailing;
-        updated.slMode = 'TRAILING_RUNNER';
-      }
-    } else {
-      const structureTrailing = parseFloat((newPrice + trailBuffer).toFixed(precision));
-      if (structureTrailing < updated.stopLossPrice) {
-        updated.stopLossPrice = structureTrailing;
-        updated.slMode = 'TRAILING_RUNNER';
-      }
-    }
+    realizedPnLDelta = finalPnl;
+    return { updatedTrade: updated, eventFired, realizedPnLDelta };
   }
 
   return { updatedTrade: updated, eventFired, realizedPnLDelta };

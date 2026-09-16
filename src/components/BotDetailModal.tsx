@@ -543,7 +543,7 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
                             <th className="px-3 py-2.5">Asset / Dir</th>
                             <th className="px-3 py-2.5">Entry / Targets</th>
                             <th className="px-3 py-2.5">Status</th>
-                            <th className="px-3 py-2.5 text-right">PnL (35% TP1 / 25% TP2 / 40% Runner)</th>
+                            <th className="px-3 py-2.5 text-right">PnL (50% TP1 / 50% TP2 Full Close)</th>
                             <th className="px-3 py-2.5">AI Confirmation / Exit Note</th>
                           </tr>
                         </thead>
@@ -864,34 +864,24 @@ export const BotDetailModal: React.FC<BotDetailModalProps> = ({
               </div>
 
               {/* Dynamic TP & Risk Rules */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200">
                   <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
                     <Target className="w-3.5 h-3.5 text-emerald-600" />
-                    🎯 TP1 Target (Book 35% &amp; SL to BE)
+                    🎯 TP1 Target [0.8x Distance] (Book 50% &amp; SL to Entry)
                   </div>
                   <div className="text-emerald-900 text-[11px] leading-relaxed">
-                    Books <strong>35% position profit</strong> when hit. Automatically shifts Stop Loss to Entry Break-Even (BE), eliminating further downside risk.
+                    Books <strong>50% position profit</strong> when hit at 0.8x Stop Loss distance. Automatically shifts Stop Loss to Entry Break-Even (BE), locking in zero downside risk.
                   </div>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-cyan-50/70 border border-cyan-200">
                   <div className="font-bold text-cyan-800 mb-1 flex items-center gap-1">
                     <Target className="w-3.5 h-3.5 text-cyan-600" />
-                    💎 TP2 Target (Book 25% &amp; Lock TP1)
+                    💎 TP2 Target [1.2x Distance] (Book 50% &amp; Full Close)
                   </div>
                   <div className="text-cyan-900 text-[11px] leading-relaxed">
-                    Books <strong>25% position profit</strong>. Automatically shifts Stop Loss to TP1 price, locking in major gains for the 40% runner.
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-purple-50/70 border border-purple-200">
-                  <div className="font-bold text-purple-800 mb-1 flex items-center gap-1">
-                    <Activity className="w-3.5 h-3.5 text-purple-600" />
-                    🏃 40% Trailing Runner
-                  </div>
-                  <div className="text-purple-900 text-[11px] leading-relaxed">
-                    Trails along dynamic EMA/structure to capture high-multiple continuation runs.
+                    Books <strong>remaining 50% position profit</strong> when hit at 1.2x Stop Loss distance. Automatically closes trade completely with no running trade remaining.
                   </div>
                 </div>
               </div>

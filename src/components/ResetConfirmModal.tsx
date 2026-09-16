@@ -33,16 +33,26 @@ export const ResetConfirmModal: React.FC<ResetConfirmModalProps> = ({
         </div>
 
         <div>
-          <h3 className="text-base font-bold text-slate-900">Reset Arena to Fresh $100 Accounts?</h3>
+          <h3 className="text-base font-bold text-slate-900">Reset Arena Starting Balances & Counters?</h3>
           <p className="text-xs text-slate-600 mt-1 leading-relaxed font-medium">
-            This action will reset all <strong>40 AI bots</strong> back to a fresh <strong>$100.00 starting portfolio</strong> ($4,000 total arena capital), clear all active and closed trade histories, and initialize baseline learning memories.
+            This action resets bot balances back to <strong>$100.00 starting portfolios</strong> and clears active/closed trade counters.
           </p>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+          <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+            <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
+            <span>AI Brain & Lessons Learned are 100% Preserved:</span>
+          </div>
+          <div className="text-[11px] text-emerald-700 font-medium">
+            ✓ Auto-adapted strategies, calibrated conviction levels, and multi-coin mistake lessons remain fully intact.
+          </div>
         </div>
 
         <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1">
           <div className="font-bold text-slate-900">What will be reset:</div>
           <div className="text-[11px] text-slate-600 flex items-center gap-1.5 font-medium">
-            <span>• All 40 bot balances → Exactly $100.00 each</span>
+            <span>• Bot portfolio balances → Exactly $100.00 each</span>
           </div>
           <div className="text-[11px] text-slate-600 flex items-center gap-1.5 font-medium">
             <span>• Win rates and trade counters → 0W / 0L</span>

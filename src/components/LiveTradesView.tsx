@@ -82,7 +82,7 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5 font-medium">
-            Risk Architecture: <strong>3% Dynamic Margin</strong> | <strong>Dynamic Leverage</strong> | <strong>Max Loss 1.5%</strong> | Book 35% TP1 (SL to BE) → Book 25% TP2 (SL to TP1) → 40% Structural Trailing Runner
+            Execution Rules: <strong>3% Dynamic Margin</strong> | <strong>Dynamic Leverage</strong> | <strong>TP1 (0.8x distance)</strong>: Book 50% Profit & Move SL to Entry Break-Even → <strong>TP2 (1.2x distance)</strong>: Book Remaining 50% & Full Close (No Running Trade)
           </p>
         </div>
 
@@ -295,11 +295,11 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
                             <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] mb-1.5 px-0.5">
                               <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                                 <Target className="w-3 h-3 text-emerald-600" />
-                                TP1 Equal Distance to SL ({tp1DistPercent}% TP1 = {slDistPercent}% SL)
+                                TP1 0.8x Distance ({tp1DistPercent}%) | TP2 1.2x Distance ({((Math.abs(trade.tp2Price - trade.entryPrice) / trade.entryPrice) * 100).toFixed(1)}%) | SL ({slDistPercent}%)
                               </span>
                               <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-mono text-[10px]">
                                 <Sparkles className="w-3 h-3 text-amber-600" />
-                                Confidence Score: {trade.confidenceScore}%
+                                Conviction Score: {trade.confidenceScore}%
                               </span>
                             </div>
 
@@ -320,8 +320,8 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
                                 <div className="text-[10px] uppercase font-bold text-slate-500">Stop Loss ({slDistPercent}%)</div>
                                 <div className={`font-mono font-bold mt-0.5 ${trade.slMode === 'BREAKEVEN_TP1' || trade.slMode === 'LOCKED_TP2' ? 'text-emerald-600' : 'text-rose-600'}`}>
                                   ${trade.stopLossPrice}
-                                  {trade.slMode === 'BREAKEVEN_TP1' && <span className="text-[9px] block text-emerald-600 font-normal">Break-Even (BE)</span>}
-                                  {trade.slMode === 'LOCKED_TP2' && <span className="text-[9px] block text-emerald-600 font-normal">Locked TP1</span>}
+                                  {trade.slMode === 'BREAKEVEN_TP1' && <span className="text-[9px] block text-emerald-600 font-normal">Entry Break-Even (BE)</span>}
+                                  {trade.slMode === 'LOCKED_TP2' && <span className="text-[9px] block text-emerald-600 font-normal">Full Closed (TP2)</span>}
                                 </div>
                               </div>
                             </div>
@@ -332,57 +332,47 @@ export const LiveTradesView: React.FC<LiveTradesViewProps> = ({
                       {/* Multi-Tier Target Milestone Strip */}
                       <div className="space-y-1.5 mb-3">
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500 font-bold uppercase text-[10px]">Multi-Tier TP Milestones:</span>
+                          <span className="text-slate-500 font-bold uppercase text-[10px]">Profit Booking Milestones:</span>
                           <span className="text-emerald-700 font-mono font-bold text-[10px]">
-                            35% TP1 (BE) → 25% TP2 (Lock TP1) → 40% Runner
+                            50% Booked at TP1 (SL → Entry) → 50% Booked at TP2 (Full Close, No Runner)
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2 text-xs font-mono">
+                        <div className="grid grid-cols-2 gap-2 text-xs font-mono">
                           {/* TP1 */}
-                          <div className={`p-2 rounded-xl border text-center transition-all ${
+                          <div className={`p-2.5 rounded-xl border text-center transition-all ${
                             trade.tp1Hit 
                               ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold shadow-2xs'
                               : 'bg-slate-50 border-slate-200 text-slate-700'
                           }`}>
                             <div className="text-[10px] font-sans font-bold flex items-center justify-center gap-1">
                               {trade.tp1Hit ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Target className="w-3 h-3 text-slate-400" />}
-                              TP1 (Book 35% → BE)
+                              TP 1 [0.8x SL Distance] (Book 50% → SL to Entry)
                             </div>
-                            <div className="mt-0.5">${trade.tp1Price}</div>
+                            <div className="mt-0.5 font-bold text-sm">${trade.tp1Price}</div>
                             {trade.tp1Hit && (
-                              <div className="text-[9px] text-emerald-700 font-bold mt-0.5">
-                                +${trade.tp1BookedAmount?.toFixed(2) || '0.00'} Booked
+                              <div className="text-[10px] text-emerald-700 font-bold mt-0.5">
+                                +${trade.tp1BookedAmount?.toFixed(2) || '0.00'} Profit Booked
                               </div>
                             )}
                           </div>
 
                           {/* TP2 */}
-                          <div className={`p-2 rounded-xl border text-center transition-all ${
+                          <div className={`p-2.5 rounded-xl border text-center transition-all ${
                             trade.tp2Hit 
                               ? 'bg-cyan-50 border-cyan-300 text-cyan-800 font-bold shadow-2xs'
                               : 'bg-slate-50 border-slate-200 text-slate-700'
                           }`}>
                             <div className="text-[10px] font-sans font-bold flex items-center justify-center gap-1">
                               {trade.tp2Hit ? <CheckCircle2 className="w-3 h-3 text-cyan-600" /> : <Target className="w-3 h-3 text-slate-400" />}
-                              TP2 (Book 25% → TP1)
+                              TP 2 [1.2x SL Distance] (Book 50% → Full Close)
                             </div>
-                            <div className="mt-0.5">${trade.tp2Price}</div>
+                            <div className="mt-0.5 font-bold text-sm">${trade.tp2Price}</div>
                             {trade.tp2Hit && (
-                              <div className="text-[9px] text-cyan-700 font-bold mt-0.5">
-                                +${trade.tp2BookedAmount?.toFixed(2) || '0.00'} Booked
+                              <div className="text-[10px] text-cyan-700 font-bold mt-0.5">
+                                +${trade.tp2BookedAmount?.toFixed(2) || '0.00'} Profit Booked (Trade Closed)
                               </div>
                             )}
-                          </div>
-
-                          {/* Runner */}
-                          <div className={`p-2 rounded-xl border text-center transition-all ${
-                            trade.tp2Hit 
-                              ? 'bg-purple-50 border-purple-300 text-purple-800 font-bold animate-pulse shadow-2xs'
-                              : 'bg-slate-50 border-slate-200 text-slate-500'
-                          }`}>
-                            <div className="text-[10px] font-sans font-bold">40% Trailing Runner</div>
-                            <div className="mt-0.5">{trade.tp2Hit ? 'Trailing Structure' : 'Locked until TP2'}</div>
                           </div>
                         </div>
                       </div>

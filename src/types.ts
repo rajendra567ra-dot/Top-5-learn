@@ -124,6 +124,10 @@ export interface ArenaBot {
   avatarIcon: string;
   confirmationRules: BotConfirmationRule[]; // 10 strict rules
   aiBrain: BotBrainIntelligence;
+  isCombinationBot?: boolean;
+  parentBotIds?: string[];
+  parentBotNames?: string[];
+  parentBotSerials?: string[];
 }
 
 export interface TradePosition {
