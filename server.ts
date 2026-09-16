@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
@@ -428,8 +429,13 @@ async function syncLiveMarketData() {
 // Immediately trigger market sync on boot
 syncLiveMarketData();
 
-// Autonomous Arena Engine Tick (Runs strictly every 2.0 seconds)
-setInterval(async () => {
+let arenaInterval: NodeJS.Timeout | null = null;
+
+// Autonomous Arena Engine Tick (Runs strictly every 2.0 seconds once server is bound)
+function startArenaEngine() {
+  if (arenaInterval) return;
+
+  arenaInterval = setInterval(async () => {
   if (!arenaState.isScanningActive) return;
 
   const now = Date.now();
@@ -621,6 +627,7 @@ setInterval(async () => {
 
   saveStateToDisk();
 }, 2000);
+}
 
 // API Routes
 app.get('/api/arena/state', (req, res) => {
@@ -928,14 +935,91 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Apex 40 AI Crypto Bot Arena Server running on http://0.0.0.0:${PORT}`);
-  });
+  const httpServer = http.createServer(app);
+
+  function listenWithRetry(
+    serverInstance: http.Server,
+    port: number,
+    host = '0.0.0.0',
+    maxRetries = 20,
+    retryDelayMs = 1000
+  ): Promise<void> {
+    let attempt = 0;
+
+    return new Promise((resolve, reject) => {
+      function tryListen() {
+        attempt++;
+
+        const onError = (err: NodeJS.ErrnoException) => {
+          serverInstance.removeListener('listening', onListening);
+
+          if (err.code === 'EADDRINUSE') {
+            if (attempt <= maxRetries) {
+              console.warn(
+                `⚠️ [Port Notice] Port ${port} is currently busy (EADDRINUSE). ` +
+                `Waiting for previous container/deployment process to release port... ` +
+                `(Attempt ${attempt}/${maxRetries}, retrying in ${retryDelayMs}ms)`
+              );
+              setTimeout(tryListen, retryDelayMs);
+            } else {
+              console.error(
+                `❌ [Startup Failure] Port ${port} remained in use after ${maxRetries} attempts. ` +
+                `If deploying on a cloud host, please ensure the previous container is stopped.`
+              );
+              reject(err);
+            }
+          } else {
+            console.error(`❌ [Server Startup Error]`, err);
+            reject(err);
+          }
+        };
+
+        const onListening = () => {
+          serverInstance.removeListener('error', onError);
+          console.log(`🚀 Apex AI Crypto Bot Arena Server successfully running on http://${host}:${port}`);
+          resolve();
+        };
+
+        serverInstance.once('error', onError);
+        serverInstance.once('listening', onListening);
+
+        serverInstance.listen(port, host);
+      }
+
+      tryListen();
+    });
+  }
+
+  // Graceful shutdown hooks for container lifecycle
+  const handleShutdown = (signal: string) => {
+    console.log(`🛑 Received ${signal}. Shutting down gracefully...`);
+    if (arenaInterval) {
+      clearInterval(arenaInterval);
+      arenaInterval = null;
+    }
+    httpServer.close(() => {
+      console.log('✅ HTTP server closed. Port released cleanly.');
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 3000);
+  };
+
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleShutdown('SIGINT'));
+
+  try {
+    await listenWithRetry(httpServer, PORT, '0.0.0.0');
+    // Start arena simulation and trade monitoring engine
+    startArenaEngine();
+  } catch (err) {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  }
 }
 
 startServer();
