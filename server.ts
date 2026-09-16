@@ -692,10 +692,37 @@ function startArenaEngine() {
 
 // API Routes
 app.get('/api/arena/state', (req, res) => {
+  // Guaranteed 300+ Universe: If server state is ever < 300 coins, self-heal immediately
+  if (!arenaState.coins || arenaState.coins.length < 300) {
+    const fullUniverse = generateTop500Universe();
+    const existingMap = new Map((arenaState.coins || []).map(c => [c.symbol, c]));
+    arenaState.coins = fullUniverse.map(coin => {
+      const existing = existingMap.get(coin.symbol);
+      return existing ? { ...coin, price: existing.price || coin.price, change24h: existing.change24h || coin.change24h } : coin;
+    });
+    saveStateToDisk();
+  }
+
   res.json({
     status: 'ok',
     data: arenaState,
     serverTime: Date.now(),
+  });
+});
+
+// Force refresh universe to full 300+ verified coins
+app.post('/api/arena/universe/refresh', (req, res) => {
+  const fullUniverse = generateTop500Universe();
+  const existingMap = new Map((arenaState.coins || []).map(c => [c.symbol, c]));
+  arenaState.coins = fullUniverse.map(coin => {
+    const existing = existingMap.get(coin.symbol);
+    return existing ? { ...coin, price: existing.price || coin.price, change24h: existing.change24h || coin.change24h } : coin;
+  });
+  saveStateToDisk();
+  res.json({
+    status: 'ok',
+    message: `Refreshed universe to ${arenaState.coins.length} verified coins`,
+    coinsCount: arenaState.coins.length,
   });
 });
 

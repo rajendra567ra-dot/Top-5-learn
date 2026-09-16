@@ -13,7 +13,8 @@ import {
   Copy,
   Check,
   Radio,
-  FileCheck
+  FileCheck,
+  RefreshCw
 } from 'lucide-react';
 import { CryptoCoin } from '../types';
 import { getBlockExplorerUrl } from '../data/topCoins';
@@ -66,6 +67,23 @@ export const CMCScannerView: React.FC<CMCScannerViewProps> = ({ coins, isScannin
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              id="force-sync-universe-btn"
+              type="button"
+              onClick={async () => {
+                try {
+                  await fetch('/api/arena/universe/refresh', { method: 'POST' });
+                  window.location.reload();
+                } catch {
+                  window.location.reload();
+                }
+              }}
+              title="Force sync and reload full 300+ verified cryptocurrency universe"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Sync 300+ Coins
+            </button>
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <FileCheck className="w-4 h-4 text-emerald-600" />
               100% Verified Contract Addresses

@@ -78,6 +78,19 @@ export const App: React.FC = () => {
       if (res.ok) {
         const json = await res.json();
         if (json.data) {
+          // Bulletproof 300+ Universe Guarantee: If connected to an older deployed container with < 300 coins,
+          // immediately fuse the full verified 300+ coin universe on the client and instruct server to refresh too!
+          if (!json.data.coins || json.data.coins.length < 300) {
+            const fullUniverse = generateTop500Universe();
+            const serverMap = new Map<string, any>((json.data.coins || []).map((c: any) => [c.symbol, c]));
+            json.data.coins = fullUniverse.map((coin) => {
+              const live = serverMap.get(coin.symbol);
+              return live && typeof live === 'object' ? { ...coin, ...(live as Record<string, unknown>) } : coin;
+            });
+            // Asynchronously sync the backend memory & disk to 300+ universe
+            fetch('/api/arena/universe/refresh', { method: 'POST' }).catch(() => {});
+          }
+
           setState(json.data);
           // Keep selected bot in sync ONLY if modal is currently active
           const activeId = selectedBotIdRef.current;
