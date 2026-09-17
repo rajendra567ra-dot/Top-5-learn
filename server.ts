@@ -28,11 +28,12 @@ import {
 } from './src/services/arenaEngine';
 
 const app = express();
-// On AI Studio dev sandbox, port 3000 is required by the internal nginx reverse proxy.
-// On cloud deployment hosts (like AIC Cloud, Cloud Run, Render, etc.), process.env.PORT specifies the target port (e.g. 10004).
-const PORT = process.env.APPLET_ID 
-  ? 3000 
-  : (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
+// Port 3000 is required by the AI Studio reverse proxy in dev and preview environments.
+// If process.env.PORT is also supplied (e.g. 8080 in raw Cloud Run), we also bind a secondary listener.
+const PRIMARY_PORT = 3000;
+const SECONDARY_PORT = process.env.PORT && parseInt(process.env.PORT, 10) !== PRIMARY_PORT 
+  ? parseInt(process.env.PORT, 10) 
+  : null;
 
 app.use(express.json());
 
@@ -40,8 +41,12 @@ const STATE_FILE_DIR = path.join(process.cwd(), 'data');
 const STATE_FILE_PATH = path.join(STATE_FILE_DIR, 'arena-state.json');
 
 // Ensure data folder exists
-if (!fs.existsSync(STATE_FILE_DIR)) {
-  fs.mkdirSync(STATE_FILE_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(STATE_FILE_DIR)) {
+    fs.mkdirSync(STATE_FILE_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('⚠️ Notice creating data directory:', e);
 }
 
 function initializeFreshArenaState(): ArenaFleetState {
@@ -764,9 +769,22 @@ app.post('/api/arena/reset', (req, res) => {
 // Bot Management: Active / Pause toggle
 app.post('/api/arena/bot/toggle-status', (req, res) => {
   const { botId } = req.body;
-  const bot = arenaState.bots.find(b => b.id === botId || b.serialNumber.toLowerCase() === (botId || '').toLowerCase());
+  if (!botId) {
+    return res.status(400).json({ status: 'error', message: 'botId is required' });
+  }
+
+  const query = String(botId).trim().toLowerCase();
+  const bot = arenaState.bots.find(b => {
+    const bId = (b.id || '').toLowerCase();
+    const bSerial = (b.serialNumber || '').toLowerCase();
+    const bName = (b.name || '').toLowerCase();
+    const bSerialNum = bSerial.replace(/\D/g, '');
+    const qNum = query.replace(/\D/g, '');
+    return bId === query || bSerial === query || bName === query || (qNum && bSerialNum && qNum === bSerialNum);
+  });
+
   if (!bot) {
-    return res.status(404).json({ status: 'error', message: 'Bot not found' });
+    return res.status(404).json({ status: 'error', message: `Bot '${botId}' not found.` });
   }
 
   bot.status = bot.status === 'PAUSED' ? 'ACTIVE' : 'PAUSED';
@@ -776,15 +794,29 @@ app.post('/api/arena/bot/toggle-status', (req, res) => {
     status: 'ok',
     message: `Bot ${bot.name} (${bot.serialNumber}) is now ${bot.status}.`,
     data: arenaState,
+    bot,
   });
 });
 
 // Bot Management: Delete Bot
 app.post('/api/arena/bot/delete', (req, res) => {
   const { botId } = req.body;
-  const index = arenaState.bots.findIndex(b => b.id === botId || b.serialNumber.toLowerCase() === (botId || '').toLowerCase());
+  if (!botId) {
+    return res.status(400).json({ status: 'error', message: 'botId is required' });
+  }
+
+  const query = String(botId).trim().toLowerCase();
+  const index = arenaState.bots.findIndex(b => {
+    const bId = (b.id || '').toLowerCase();
+    const bSerial = (b.serialNumber || '').toLowerCase();
+    const bName = (b.name || '').toLowerCase();
+    const bSerialNum = bSerial.replace(/\D/g, '');
+    const qNum = query.replace(/\D/g, '');
+    return bId === query || bSerial === query || bName === query || (qNum && bSerialNum && qNum === bSerialNum);
+  });
+
   if (index === -1) {
-    return res.status(404).json({ status: 'error', message: 'Bot not found' });
+    return res.status(404).json({ status: 'error', message: `Bot '${botId}' not found.` });
   }
 
   const deletedBot = arenaState.bots[index];
@@ -804,7 +836,48 @@ app.post('/api/arena/bot/delete', (req, res) => {
     status: 'ok',
     message: `Bot ${deletedBot.name} (${deletedBot.serialNumber}) deleted successfully.`,
     data: arenaState,
+    deletedBotId: deletedBot.id,
   });
+});
+
+// Bot Management: Client Sync (Persists custom bots, paused states, or deleted bots across serverless container restarts)
+app.post('/api/arena/bot/sync-client', (req, res) => {
+  const { customBots, pausedBotIds, deletedBotIds } = req.body || {};
+  let modified = false;
+
+  if (Array.isArray(deletedBotIds) && deletedBotIds.length > 0) {
+    const delSet = new Set(deletedBotIds.map(id => String(id).toLowerCase()));
+    const beforeCount = arenaState.bots.length;
+    arenaState.bots = arenaState.bots.filter(b => !delSet.has(b.id.toLowerCase()) && !delSet.has(b.serialNumber.toLowerCase()));
+    if (arenaState.bots.length !== beforeCount) modified = true;
+  }
+
+  if (Array.isArray(pausedBotIds) && pausedBotIds.length > 0) {
+    const pauseSet = new Set(pausedBotIds.map(id => String(id).toLowerCase()));
+    arenaState.bots.forEach(b => {
+      if (pauseSet.has(b.id.toLowerCase()) || pauseSet.has(b.serialNumber.toLowerCase())) {
+        if (b.status !== 'PAUSED') {
+          b.status = 'PAUSED';
+          modified = true;
+        }
+      }
+    });
+  }
+
+  if (Array.isArray(customBots) && customBots.length > 0) {
+    customBots.forEach((cb: ArenaBot) => {
+      if (cb && cb.id && !arenaState.bots.some(b => b.id === cb.id || b.serialNumber === cb.serialNumber)) {
+        arenaState.bots.push(cb);
+        modified = true;
+      }
+    });
+  }
+
+  if (modified) {
+    saveStateToDisk();
+  }
+
+  res.json({ status: 'ok', data: arenaState });
 });
 
 // Bot Creation: Combination / Dual-Consensus Bot
@@ -817,8 +890,20 @@ app.post('/api/arena/bot/create-combination', (req, res) => {
     return res.status(400).json({ status: 'error', message: 'Please select two different parent bots' });
   }
 
-  const parentA = arenaState.bots.find(b => b.id === parentAId);
-  const parentB = arenaState.bots.find(b => b.id === parentBId);
+  const pAQuery = String(parentAId).trim().toLowerCase();
+  const pBQuery = String(parentBId).trim().toLowerCase();
+
+  const findParent = (q: string) => arenaState.bots.find(b => {
+    const bId = (b.id || '').toLowerCase();
+    const bSerial = (b.serialNumber || '').toLowerCase();
+    const bName = (b.name || '').toLowerCase();
+    const bSerialNum = bSerial.replace(/\D/g, '');
+    const qNum = q.replace(/\D/g, '');
+    return bId === q || bSerial === q || bName === q || (qNum && bSerialNum && qNum === bSerialNum);
+  });
+
+  const parentA = findParent(pAQuery);
+  const parentB = findParent(pBQuery);
   if (!parentA || !parentB) {
     return res.status(404).json({ status: 'error', message: 'One or both parent bots not found' });
   }
@@ -1151,7 +1236,20 @@ async function startServer() {
   process.on('SIGINT', () => handleShutdown('SIGINT'));
 
   try {
-    await listenWithRetry(httpServer, PORT, '0.0.0.0');
+    await listenWithRetry(httpServer, PRIMARY_PORT, '0.0.0.0');
+    
+    // In raw Cloud Run containers where traffic is routed to process.env.PORT (e.g. 8080),
+    // launch a secondary HTTP server for the same Express application.
+    if (SECONDARY_PORT && SECONDARY_PORT !== PRIMARY_PORT) {
+      const secondaryHttpServer = http.createServer(app);
+      secondaryHttpServer.listen(SECONDARY_PORT, '0.0.0.0', () => {
+        console.log(`🌐 [Cloud Dual-Ingress] Secondary HTTP listener active on port ${SECONDARY_PORT}`);
+      });
+      secondaryHttpServer.on('error', (err: any) => {
+        console.warn(`⚠️ [Cloud Dual-Ingress] Secondary port ${SECONDARY_PORT} notice:`, err.message);
+      });
+    }
+
     // Start arena simulation and trade monitoring engine
     startArenaEngine();
   } catch (err) {
